@@ -1,0 +1,47 @@
+# Static analysis configuration for Brisko Billing.
+#
+# Run with: flutter analyze
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
+  language:
+    strict-casts: true
+    strict-raw-types: true
+  errors:
+    # Missing return types and untyped members hide bugs in money and tax
+    # calculations, so treat them as errors rather than hints.
+    always_declare_return_types: error
+    # Printing to the console is not a logging strategy for a production POS.
+    avoid_print: error
+
+linter:
+  rules:
+    # Correctness
+    always_declare_return_types: true
+    avoid_print: true
+    cancel_subscriptions: true
+    close_sinks: true
+    unawaited_futures: true
+    only_throw_errors: true
+    avoid_slow_async_io: true
+
+    # Immutability. Domain models and widget configuration should not be mutable.
+    prefer_final_locals: true
+    prefer_final_in_for_each: true
+
+    # Readability and consistency
+    prefer_single_quotes: true
+    directives_ordering: true
+    require_trailing_commas: true
+    unnecessary_lambdas: true
+    unnecessary_parenthesis: true
+    sort_constructors_first: true
+    use_string_buffers: true

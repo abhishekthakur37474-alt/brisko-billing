@@ -1,0 +1,33 @@
+name: brisko_billing
+description: "Brisko Billing - point of sale and billing application for the Brisko Pizza outlet."
+# Private application. Never published to pub.dev.
+publish_to: 'none'
+
+# version: <build-name>+<build-number>
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State management. ChangeNotifier + Provider keeps UI free of business logic
+  # without pulling in a code-generation heavy framework.
+  provider: 6.1.5+1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Assets are added here as the application grows, for example:
+  # assets:
+  #   - assets/images/
