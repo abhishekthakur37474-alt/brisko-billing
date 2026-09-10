@@ -88,16 +88,22 @@ class Fixtures {
   static MenuItemOption option({
     String? id,
     String? menuItemId,
+    String? variantId,
+    String? categoryId,
     String name = 'Extra Cheese',
     MenuOptionType optionType = MenuOptionType.addOn,
     String price = '30.00',
+    int displayOrder = 0,
   }) {
     return MenuItemOption(
       id: id ?? EntityId.generate(prefix: 'opt'),
       menuItemId: menuItemId,
+      variantId: variantId,
+      categoryId: categoryId,
       name: name,
       optionType: optionType,
       price: Money.parse(price),
+      displayOrder: displayOrder,
       createdAt: _now,
       updatedAt: _now,
     );

@@ -99,20 +99,117 @@ class SqliteMenuRepository implements MenuRepository {
   }
 
   @override
-  Future<Result<List<MenuItemOption>>> loadOptionsForItem(String menuItemId) {
+  Future<Result<List<MenuItemOption>>> loadOptionsForVariant(String variantId) {
     return SqliteErrorMapper.guard<List<MenuItemOption>>(() async {
-      // A NULL menuItemId means the option applies to every product, so the
-      // item's own options and the global ones are returned as one list.
+      // Resolve the variant to its product and category, so category-scoped and
+      // item-scoped options can be included without the caller supplying them.
+      final List<Map<String, Object?>> owner = await _db.rawQuery(
+        '''
+        SELECT v.menuItemId AS menuItemId, i.categoryId AS categoryId
+        FROM ${SqliteTables.menuItemVariants} v
+        JOIN ${SqliteTables.menuItems} i ON i.id = v.menuItemId
+        WHERE v.id = ? AND v.isDeleted = 0
+        LIMIT 1
+      ''',
+        <Object?>[variantId],
+      );
+
+      if (owner.isEmpty) {
+        // Unknown or deleted variant. Only genuinely global options can apply.
+        return _resolve(await _globalOptionRows());
+      }
+
+      final String menuItemId = owner.first['menuItemId']! as String;
+      final String categoryId = owner.first['categoryId']! as String;
+
+      // Each branch pins the narrower scope columns to NULL, so a row priced for a
+      // different variant cannot leak in through the item or category branch.
       final List<Map<String, Object?>> rows = await _db.query(
         SqliteTables.menuItemOptions,
         where:
-            'isDeleted = 0 AND isActive = 1 '
-            'AND (menuItemId = ? OR menuItemId IS NULL)',
-        whereArgs: <Object?>[menuItemId],
-        orderBy: 'optionType ASC, displayOrder ASC, name ASC',
+            'isDeleted = 0 AND isActive = 1 AND ('
+            'variantId = ? '
+            'OR (variantId IS NULL AND menuItemId = ?) '
+            'OR (variantId IS NULL AND menuItemId IS NULL AND categoryId = ?) '
+            'OR (variantId IS NULL AND menuItemId IS NULL AND categoryId IS NULL)'
+            ')',
+        whereArgs: <Object?>[variantId, menuItemId, categoryId],
       );
-      return rows.map(MenuItemOption.fromRow).toList(growable: false);
+
+      return _resolve(rows);
+    }, context: 'load the options for this size');
+  }
+
+  @override
+  Future<Result<List<MenuItemOption>>> loadOptionsForItem(String menuItemId) {
+    return SqliteErrorMapper.guard<List<MenuItemOption>>(() async {
+      final List<Map<String, Object?>> category = await _db.query(
+        SqliteTables.menuItems,
+        columns: <String>['categoryId'],
+        where: 'id = ? AND isDeleted = 0',
+        whereArgs: <Object?>[menuItemId],
+        limit: 1,
+      );
+
+      if (category.isEmpty) {
+        return _resolve(await _globalOptionRows());
+      }
+
+      // variantId IS NULL throughout: an option whose price depends on the size
+      // cannot be offered until a size is chosen, so it is excluded here rather
+      // than returned at an arbitrary size's price.
+      final List<Map<String, Object?>> rows = await _db.query(
+        SqliteTables.menuItemOptions,
+        where:
+            'isDeleted = 0 AND isActive = 1 AND variantId IS NULL AND ('
+            'menuItemId = ? '
+            'OR (menuItemId IS NULL AND categoryId = ?) '
+            'OR (menuItemId IS NULL AND categoryId IS NULL)'
+            ')',
+        whereArgs: <Object?>[menuItemId, category.first['categoryId']],
+      );
+
+      return _resolve(rows);
     }, context: 'load the item options');
+  }
+
+  Future<List<Map<String, Object?>>> _globalOptionRows() {
+    return _db.query(
+      SqliteTables.menuItemOptions,
+      where:
+          'isDeleted = 0 AND isActive = 1 '
+          'AND variantId IS NULL AND menuItemId IS NULL AND categoryId IS NULL',
+    );
+  }
+
+  /// Collapses overlapping scopes and sorts the result for display.
+  ///
+  /// Two rows sharing a name are two prices for the same customisation reached
+  /// through different scopes, so the narrower one is kept. Without this the counter
+  /// could be shown Extra Cheese twice at different prices and no way to choose.
+  static List<MenuItemOption> _resolve(List<Map<String, Object?>> rows) {
+    final Map<String, MenuItemOption> narrowest = <String, MenuItemOption>{};
+
+    for (final Map<String, Object?> row in rows) {
+      final MenuItemOption option = MenuItemOption.fromRow(row);
+      final MenuItemOption? existing = narrowest[option.name];
+      if (existing == null ||
+          option.scope.specificity > existing.scope.specificity) {
+        narrowest[option.name] = option;
+      }
+    }
+
+    // Sorted here rather than in SQL because deduplication happens after the query.
+    final List<MenuItemOption> resolved = narrowest.values.toList();
+    resolved.sort((MenuItemOption a, MenuItemOption b) {
+      final int byType = a.optionType.index.compareTo(b.optionType.index);
+      if (byType != 0) {
+        return byType;
+      }
+      final int byOrder = a.displayOrder.compareTo(b.displayOrder);
+      return byOrder != 0 ? byOrder : a.name.compareTo(b.name);
+    });
+    return List<MenuItemOption>.unmodifiable(resolved);
   }
 
   @override

@@ -135,110 +135,114 @@ class MenuSeedData {
 
   /// Crust choices, paid additions and condiments.
   ///
-  /// ## Why the size is in the name
+  /// ## Why there are so many rows
   ///
   /// The menu prices most of these per pizza size: Extra Cheese is ₹50 on a Small
-  /// and ₹90 on a Large. `menu_item_options` carries a single `pricePaise` column,
-  /// so one row cannot hold three prices, and each priced size is seeded as its own
-  /// row with the size in the name.
+  /// and ₹90 on a Large. A row holds one price, so a size-dependent option needs one
+  /// row per size it is offered at.
   ///
-  /// This is a faithful transcription but a weak model, and it is the one place the
-  /// Step 3 schema does not fit the real menu. Two columns would fix it, and both
-  /// are additive: a nullable size scope so a row can say which variant it prices,
-  /// and a category scope so pizza options are offered on pizzas only. The schema
-  /// was left untouched here pending that decision. See the task report.
+  /// There is no shared "Small" entity to point at, because a variant row exists per
+  /// product and size: a Small Farmfresh and a Small Cheese Pizza are two different
+  /// variants. Scoping by `variantId` therefore expands to one row per pizza per
+  /// size, which is 170 rows, plus Ketchup as the single global option.
   ///
-  /// [SeedOption.itemSlug] is left null, meaning the option is stored once rather
-  /// than duplicated across all seventeen pizzas. The true scope is "any pizza",
-  /// which the current schema cannot express.
-  static const List<SeedOption> options = <SeedOption>[
-    // CHOICE OF CRUST. Thin Crust prints Small and Medium prices only.
-    SeedOption(
-      slug: 'thin-crust-small',
-      name: 'Thin Crust (Small)',
-      optionTypeName: _crust,
-      priceRupees: '30',
-      displayOrder: 10,
-    ),
-    SeedOption(
-      slug: 'thin-crust-medium',
-      name: 'Thin Crust (Medium)',
-      optionTypeName: _crust,
-      priceRupees: '50',
-      displayOrder: 11,
-    ),
+  /// That is more rows than the menu has printed cells, and it is the honest cost of
+  /// expressing the scope as a relationship instead of hiding it in the name. It also
+  /// buys real expressiveness: the outlet can charge more for extra paneer on a
+  /// premium pizza without any schema change. The trade-off is that a uniform price
+  /// rise for one size touches seventeen rows.
+  ///
+  /// Every row's [SeedOption.name] is the plain customisation, with no size in it.
+  static final List<SeedOption> options = <SeedOption>[
+    for (final PizzaSpec pizza in _pizzas)
+      for (final PizzaOptionSpec spec in _pizzaOptions)
+        for (final MapEntry<String, String> priced in spec.pricesBySize.entries)
+          SeedOption(
+            slug: '${spec.slug}-${pizza.slug}-${priced.key}',
+            name: spec.name,
+            optionTypeName: spec.optionTypeName,
+            priceRupees: priced.value,
+            variantItemSlug: pizza.slug,
+            variantName: priced.key,
+            displayOrder: spec.displayOrder,
+          ),
 
-    // Cheese Burst also prints Small and Medium only. The menu lists it twice, in
-    // its own box and again under Choice of Crust, at the same prices.
-    SeedOption(
-      slug: 'cheese-burst-small',
-      name: 'Cheese Burst (Small)',
-      optionTypeName: _crust,
-      priceRupees: '80',
-      displayOrder: 20,
-    ),
-    SeedOption(
-      slug: 'cheese-burst-medium',
-      name: 'Cheese Burst (Medium)',
-      optionTypeName: _crust,
-      priceRupees: '90',
-      displayOrder: 21,
-    ),
-
-    // EXTRA CHEESE, priced for all three sizes.
-    SeedOption(
-      slug: 'extra-cheese-small',
-      name: 'Extra Cheese (Small)',
-      optionTypeName: _addOn,
-      priceRupees: '50',
-      displayOrder: 30,
-    ),
-    SeedOption(
-      slug: 'extra-cheese-medium',
-      name: 'Extra Cheese (Medium)',
-      optionTypeName: _addOn,
-      priceRupees: '70',
-      displayOrder: 31,
-    ),
-    SeedOption(
-      slug: 'extra-cheese-large',
-      name: 'Extra Cheese (Large)',
-      optionTypeName: _addOn,
-      priceRupees: '90',
-      displayOrder: 32,
-    ),
-
-    // EXTRA TOPPINGS, priced for all three sizes.
-    SeedOption(
-      slug: 'extra-toppings-small',
-      name: 'Extra Toppings (Small)',
-      optionTypeName: _addOn,
-      priceRupees: '30',
-      displayOrder: 40,
-    ),
-    SeedOption(
-      slug: 'extra-toppings-medium',
-      name: 'Extra Toppings (Medium)',
-      optionTypeName: _addOn,
-      priceRupees: '50',
-      displayOrder: 41,
-    ),
-    SeedOption(
-      slug: 'extra-toppings-large',
-      name: 'Extra Toppings (Large)',
-      optionTypeName: _addOn,
-      priceRupees: '70',
-      displayOrder: 42,
-    ),
-
-    // Ketchup is the only option printed at a single flat price.
-    SeedOption(
+    // Ketchup is the only option printed at a single flat price, and the only one
+    // that is not size-dependent, so it stays global.
+    const SeedOption(
       slug: 'ketchup',
       name: 'Ketchup',
       optionTypeName: _condiment,
       priceRupees: '10',
       displayOrder: 50,
     ),
+  ];
+
+  /// Pizza options and the printed price for each size they are offered at.
+  ///
+  /// A size absent from [PizzaOptionSpec.pricesBySize] is not offered, which is how
+  /// the two missing Large crust prices are represented: the menu does not print
+  /// them, so no row exists and no price is invented.
+  static const List<PizzaOptionSpec> _pizzaOptions = <PizzaOptionSpec>[
+    // CHOICE OF CRUST. Thin Crust prints Small and Medium only.
+    PizzaOptionSpec(
+      slug: 'thin-crust',
+      name: 'Thin Crust',
+      optionTypeName: _crust,
+      pricesBySize: <String, String>{'Small': '30', 'Medium': '50'},
+      displayOrder: 10,
+    ),
+    // Cheese Burst also prints Small and Medium only. The menu lists it twice, in
+    // its own box and again under Choice of Crust, at the same prices.
+    PizzaOptionSpec(
+      slug: 'cheese-burst',
+      name: 'Cheese Burst',
+      optionTypeName: _crust,
+      pricesBySize: <String, String>{'Small': '80', 'Medium': '90'},
+      displayOrder: 20,
+    ),
+    PizzaOptionSpec(
+      slug: 'extra-cheese',
+      name: 'Extra Cheese',
+      optionTypeName: _addOn,
+      pricesBySize: <String, String>{
+        'Small': '50',
+        'Medium': '70',
+        'Large': '90',
+      },
+      displayOrder: 30,
+    ),
+    PizzaOptionSpec(
+      slug: 'extra-toppings',
+      name: 'Extra Toppings',
+      optionTypeName: _addOn,
+      pricesBySize: <String, String>{
+        'Small': '30',
+        'Medium': '50',
+        'Large': '70',
+      },
+      displayOrder: 40,
+    ),
+  ];
+
+  /// Option rows seeded before scope columns existed, identified by their
+  /// deterministic ids.
+  ///
+  /// These carried the size in the name (`Extra Cheese (Small)`) because there was
+  /// nowhere else to put it. Migration v4 retires them in favour of the scoped rows
+  /// above. Listed here rather than in the migration so the two stay together with
+  /// the data they replace.
+  static const List<String> retiredUnscopedOptionIds = <String>[
+    'opt-thin-crust-small',
+    'opt-thin-crust-medium',
+    'opt-cheese-burst-small',
+    'opt-cheese-burst-medium',
+    'opt-extra-cheese-small',
+    'opt-extra-cheese-medium',
+    'opt-extra-cheese-large',
+    'opt-extra-toppings-small',
+    'opt-extra-toppings-medium',
+    'opt-extra-toppings-large',
   ];
 
   /// Values printed on the menu that could not be read, or that are genuinely
@@ -970,7 +974,40 @@ class SeedVariant {
   String get menuItemId => EntityId.seeded('item', itemSlug);
 }
 
+/// A pizza option together with the printed price for each size it is offered at.
+///
+/// Expanded by the seed into one [SeedOption] per pizza per priced size. Keeping the
+/// prices in one place per option means the four printed cells for Extra Cheese are
+/// written once and read as a group, rather than being spread over fifty-one rows
+/// where a mistake would be invisible.
+class PizzaOptionSpec {
+  const PizzaOptionSpec({
+    required this.slug,
+    required this.name,
+    required this.optionTypeName,
+    required this.pricesBySize,
+    required this.displayOrder,
+  });
+
+  final String slug;
+
+  /// The customisation, with no size in it.
+  final String name;
+
+  /// Name of a `MenuOptionType` value.
+  final String optionTypeName;
+
+  /// Variant name to printed price, for example `{'Small': '50'}`. A size the menu
+  /// does not price is simply absent, and no row is created for it.
+  final Map<String, String> pricesBySize;
+
+  final int displayOrder;
+}
+
 /// A crust, add-on or condiment row defined by the seed.
+///
+/// At most one of [itemSlug], [variantItemSlug] and [categorySlug] should be set.
+/// None set means the option is global.
 class SeedOption {
   const SeedOption({
     required this.slug,
@@ -978,11 +1015,18 @@ class SeedOption {
     required this.optionTypeName,
     required this.priceRupees,
     this.itemSlug,
+    this.variantItemSlug,
+    this.variantName,
+    this.categorySlug,
     this.displayOrder = 0,
-  });
+  }) : assert(
+         variantItemSlug == null || variantName != null,
+         'A variant-scoped option needs the variant name to resolve its id',
+       );
 
   final String slug;
 
+  /// The customisation, never carrying a size.
   final String name;
 
   /// Name of a `MenuOptionType` value.
@@ -991,9 +1035,17 @@ class SeedOption {
   /// Decimal string, as printed on the menu.
   final String priceRupees;
 
-  /// `null` means the option applies to every product. A value scopes it to that
-  /// one product.
+  /// Scopes the option to one product at any size.
   final String? itemSlug;
+
+  /// Product half of the variant this option is priced for.
+  final String? variantItemSlug;
+
+  /// Size half of the variant this option is priced for, for example `Medium`.
+  final String? variantName;
+
+  /// Scopes the option to every product in one category.
+  final String? categorySlug;
 
   final int displayOrder;
 
@@ -1001,4 +1053,12 @@ class SeedOption {
 
   String? get menuItemId =>
       itemSlug == null ? null : EntityId.seeded('item', itemSlug!);
+
+  /// Derived the same way `SeedVariant.id` is, so the two always agree.
+  String? get variantId => variantItemSlug == null
+      ? null
+      : EntityId.seeded('var', '$variantItemSlug-$variantName');
+
+  String? get categoryId =>
+      categorySlug == null ? null : EntityId.seeded('cat', categorySlug!);
 }

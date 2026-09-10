@@ -3,6 +3,7 @@ import '../../../../core/data/local/sqlite/sqlite_tables.dart';
 import '../../../../core/data/sync/sync_state.dart';
 import '../../../../core/data/sync/syncable_entity.dart';
 import '../../../../core/money/money.dart';
+import 'menu_option_scope.dart';
 import 'menu_option_type.dart';
 
 /// A selectable customisation such as Thin Crust, Extra Cheese or Ketchup.
@@ -11,6 +12,23 @@ import 'menu_option_type.dart';
 /// add-on prices without a rebuild, and a bill printed last month must still show
 /// the price that applied then, which only works if the value has a home in the
 /// data layer.
+///
+/// ## Scope
+///
+/// [name] carries the customisation only, never a size. Which pizza and which size
+/// an option is priced for is expressed through [variantId], [menuItemId] and
+/// [categoryId], so nothing has to read meaning out of a string:
+///
+/// * [variantId] set means this row prices the option for that one size of that one
+///   product. This is how the menu's size-dependent add-on pricing is represented:
+///   Extra Cheese is ₹50 on a Small and ₹90 on a Large, which is three rows sharing
+///   one name.
+/// * [menuItemId] set means the option applies to that product at any size.
+/// * [categoryId] set means it applies to every product in that category.
+/// * All three null means it applies to everything.
+///
+/// Callers should not inspect these fields. Ask the repository for the options that
+/// apply to a variant or an item and it resolves the scopes and their precedence.
 class MenuItemOption implements SyncableEntity {
   const MenuItemOption({
     required this.id,
@@ -20,6 +38,8 @@ class MenuItemOption implements SyncableEntity {
     required this.createdAt,
     required this.updatedAt,
     this.menuItemId,
+    this.variantId,
+    this.categoryId,
     this.displayOrder = 0,
     this.isActive = true,
     this.isDeleted = false,
@@ -30,6 +50,8 @@ class MenuItemOption implements SyncableEntity {
     return MenuItemOption(
       id: row.requireString(SyncColumns.id),
       menuItemId: row.optionalString('menuItemId'),
+      variantId: row.optionalString('variantId'),
+      categoryId: row.optionalString('categoryId'),
       name: row.requireString('name'),
       optionType: row.requireEnum<MenuOptionType>(
         'optionType',
@@ -49,10 +71,19 @@ class MenuItemOption implements SyncableEntity {
   @override
   final String id;
 
-  /// `null` when the option applies to every product, which is how a global
-  /// add-on like Extra Cheese is stored: once, not duplicated per pizza.
+  /// Scopes the option to one product at any size. `null` when not item-scoped.
   final String? menuItemId;
 
+  /// Scopes the option to one exact size of one product. `null` when the price does
+  /// not depend on size.
+  final String? variantId;
+
+  /// Scopes the option to every product in one category. `null` when not
+  /// category-scoped.
+  final String? categoryId;
+
+  /// The customisation, with no size or scope encoded in it. For example
+  /// `Extra Cheese`, not `Extra Cheese (Large)`.
   final String name;
 
   final MenuOptionType optionType;
@@ -76,11 +107,31 @@ class MenuItemOption implements SyncableEntity {
   @override
   final SyncState syncState;
 
+  /// How widely this row applies, narrowest first.
+  MenuOptionScope get scope {
+    if (variantId != null) {
+      return MenuOptionScope.variant;
+    }
+    if (menuItemId != null) {
+      return MenuOptionScope.item;
+    }
+    if (categoryId != null) {
+      return MenuOptionScope.category;
+    }
+    return MenuOptionScope.global;
+  }
+
   /// True when this option can be offered on every product.
-  bool get isGlobal => menuItemId == null;
+  bool get isGlobal => scope == MenuOptionScope.global;
+
+  /// True when the price depends on the size chosen, so the option cannot be
+  /// offered until a variant is known.
+  bool get isSizeSpecific => variantId != null;
 
   MenuItemOption copyWith({
     String? menuItemId,
+    String? variantId,
+    String? categoryId,
     String? name,
     MenuOptionType? optionType,
     Money? price,
@@ -93,6 +144,8 @@ class MenuItemOption implements SyncableEntity {
     return MenuItemOption(
       id: id,
       menuItemId: menuItemId ?? this.menuItemId,
+      variantId: variantId ?? this.variantId,
+      categoryId: categoryId ?? this.categoryId,
       name: name ?? this.name,
       optionType: optionType ?? this.optionType,
       price: price ?? this.price,
@@ -114,6 +167,8 @@ class MenuItemOption implements SyncableEntity {
       SyncColumns.isDeleted: SqliteValue.fromBool(isDeleted),
       SyncColumns.syncState: syncState.name,
       'menuItemId': menuItemId,
+      'variantId': variantId,
+      'categoryId': categoryId,
       'name': name,
       'optionType': optionType.name,
       'pricePaise': price.paise,

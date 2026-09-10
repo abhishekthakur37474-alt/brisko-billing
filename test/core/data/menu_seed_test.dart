@@ -9,6 +9,7 @@ import 'package:brisko_billing/features/menu/domain/models/menu_item.dart';
 import 'package:brisko_billing/features/menu/domain/models/menu_item_option.dart';
 import 'package:brisko_billing/features/menu/domain/models/menu_item_type.dart';
 import 'package:brisko_billing/features/menu/domain/models/menu_item_variant.dart';
+import 'package:brisko_billing/features/menu/domain/models/menu_option_scope.dart';
 import 'package:brisko_billing/features/menu/domain/models/menu_option_type.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -373,30 +374,24 @@ void main() {
   });
 
   group('options', () {
-    test('every printed option price is seeded', () async {
+    test('names carry the customisation only, with no size', () async {
+      // Scope now lives in variantId, so the name is clean. Any screen that had to
+      // read a size out of a name would break the first time one was renamed.
       final List<MenuItemOption> options =
           (await repository.loadAllOptions()).valueOrNull!;
-      final Map<String, Money> byName = <String, Money>{
-        for (final MenuItemOption option in options) option.name: option.price,
-      };
 
-      expect(byName, <String, Money>{
-        // Choice of crust. No Large price is printed for either.
-        'Thin Crust (Small)': Money.parse('30'),
-        'Thin Crust (Medium)': Money.parse('50'),
-        'Cheese Burst (Small)': Money.parse('80'),
-        'Cheese Burst (Medium)': Money.parse('90'),
-        // Extra cheese, all three sizes.
-        'Extra Cheese (Small)': Money.parse('50'),
-        'Extra Cheese (Medium)': Money.parse('70'),
-        'Extra Cheese (Large)': Money.parse('90'),
-        // Extra toppings, all three sizes.
-        'Extra Toppings (Small)': Money.parse('30'),
-        'Extra Toppings (Medium)': Money.parse('50'),
-        'Extra Toppings (Large)': Money.parse('70'),
-        // The only flat-priced option.
-        'Ketchup': Money.parse('10'),
+      expect(options.map((MenuItemOption o) => o.name).toSet(), <String>{
+        'Thin Crust',
+        'Cheese Burst',
+        'Extra Cheese',
+        'Extra Toppings',
+        'Ketchup',
       });
+      expect(
+        options.every((MenuItemOption o) => !o.name.contains('(')),
+        isTrue,
+        reason: 'no visible option may encode a size in its name',
+      );
     });
 
     test('no option is seeded at zero', () async {
@@ -408,15 +403,6 @@ void main() {
       expect(options.every((MenuItemOption o) => o.price.isPositive), isTrue);
     });
 
-    test('no Large crust upgrade is invented', () async {
-      final List<MenuItemOption> options =
-          (await repository.loadAllOptions()).valueOrNull!;
-      final Iterable<String> names = options.map((MenuItemOption o) => o.name);
-
-      expect(names, isNot(contains('Thin Crust (Large)')));
-      expect(names, isNot(contains('Cheese Burst (Large)')));
-    });
-
     test('options are classified by kind', () async {
       final List<MenuItemOption> options =
           (await repository.loadAllOptions()).valueOrNull!;
@@ -425,28 +411,53 @@ void main() {
           option.name: option.optionType,
       };
 
-      expect(byName['Thin Crust (Small)'], MenuOptionType.crust);
-      expect(byName['Cheese Burst (Medium)'], MenuOptionType.crust);
-      expect(byName['Extra Cheese (Large)'], MenuOptionType.addOn);
-      expect(byName['Extra Toppings (Small)'], MenuOptionType.addOn);
+      expect(byName['Thin Crust'], MenuOptionType.crust);
+      expect(byName['Cheese Burst'], MenuOptionType.crust);
+      expect(byName['Extra Cheese'], MenuOptionType.addOn);
+      expect(byName['Extra Toppings'], MenuOptionType.addOn);
       expect(byName['Ketchup'], MenuOptionType.condiment);
     });
 
-    test('options are stored once rather than per pizza', () async {
+    test('Ketchup is the only global option', () async {
+      // The only option the menu prices flat, so the only one whose price does not
+      // depend on the size chosen.
       final List<MenuItemOption> options =
           (await repository.loadAllOptions()).valueOrNull!;
+      final Iterable<MenuItemOption> global = options.where(
+        (MenuItemOption o) => o.isGlobal,
+      );
 
-      expect(options.every((MenuItemOption o) => o.isGlobal), isTrue);
-      expect(options, hasLength(11));
+      expect(global.map((MenuItemOption o) => o.name), <String>['Ketchup']);
+      expect(global.single.price, Money.parse('10'));
+      expect(global.single.scope, MenuOptionScope.global);
     });
 
-    test('a pizza is offered every option', () async {
+    test('every other option is scoped to one pizza size', () async {
+      final List<MenuItemOption> options =
+          (await repository.loadAllOptions()).valueOrNull!;
+      final Iterable<MenuItemOption> scoped = options.where(
+        (MenuItemOption o) => !o.isGlobal,
+      );
+
+      // Seventeen pizzas x ten priced option cells.
+      expect(scoped, hasLength(170));
+      expect(
+        scoped.every((MenuItemOption o) => o.scope == MenuOptionScope.variant),
+        isTrue,
+      );
+      expect(scoped.every((MenuItemOption o) => o.isSizeSpecific), isTrue);
+      expect(scoped.every((MenuItemOption o) => o.variantId != null), isTrue);
+    });
+
+    test('asking by item returns only size-independent options', () async {
+      // A size-dependent price is undefined without a size, so it is withheld
+      // rather than returned at some arbitrary size's price.
       final MenuItem pizza = await itemNamed('Farmfresh');
       final List<MenuItemOption> offered = (await repository.loadOptionsForItem(
         pizza.id,
       )).valueOrNull!;
 
-      expect(offered, hasLength(11));
+      expect(offered.map((MenuItemOption o) => o.name), <String>['Ketchup']);
     });
   });
 
@@ -477,13 +488,17 @@ void main() {
       expect(MenuSeedData.items, hasLength(64));
       // 17 pizzas x 3 sizes, plus 4 cold drink sizes.
       expect(MenuSeedData.variants, hasLength(55));
-      expect(MenuSeedData.options, hasLength(11));
+      // 17 pizzas x 10 priced option cells, plus the one global option.
+      expect(MenuSeedData.options, hasLength(171));
       expect(MenuSeedData.hasProducts, isTrue);
 
       expect(await countRows(SqliteTables.categories), 12);
       expect(await countRows(SqliteTables.menuItems), 64);
       expect(await countRows(SqliteTables.menuItemVariants), 55);
-      expect(await countRows(SqliteTables.menuItemOptions), 11);
+      // A fresh database holds only the scoped rows. An upgraded one also carries
+      // the ten retired rows, soft-deleted and invisible to every read.
+      expect(await countRows(SqliteTables.menuItemOptions), 171);
+      expect((await repository.loadAllOptions()).valueOrNull, hasLength(171));
     });
 
     test('every item belongs to a seeded category', () async {

@@ -32,8 +32,9 @@ void main() {
     test('reports the schema version the migrations define', () async {
       final int version = await database.database.getVersion();
       expect(version, SqliteDatabase.schemaVersion);
-      // Three migrations: the schema, the category seed, and the product seed.
-      expect(SqliteDatabase.schemaVersion, 3);
+      // Four migrations: the schema, the category seed, the product seed, and the
+      // option scope columns.
+      expect(SqliteDatabase.schemaVersion, 4);
     });
 
     test('creates every table the POS needs', () async {

@@ -23,14 +23,39 @@ abstract interface class MenuRepository {
   /// Sizes for one item, in display order. Empty for a single-price item.
   Future<Result<List<MenuItemVariant>>> loadVariants(String menuItemId);
 
-  /// Options offered on [menuItemId]: those scoped to the item plus every global
-  /// option.
+  /// Options that apply once a size has been chosen, at the price for that size.
   ///
-  /// The union happens here rather than in the caller so that no screen has to
-  /// know that a `null` `menuItemId` on an option means "applies to everything".
+  /// This is the call the billing screen makes. Give it the chosen variant and it
+  /// returns a ready list: Extra Cheese at ₹70 for a Medium, ₹90 for a Large, with
+  /// no name to parse and no scope to interpret.
+  ///
+  /// It combines all four scopes, narrowest first, resolving the variant to its
+  /// product and category on the way:
+  ///
+  /// 1. options priced for this exact variant
+  /// 2. options scoped to the product
+  /// 3. options scoped to the product's category
+  /// 4. global options
+  ///
+  /// Where the same option name is reachable through more than one scope, the
+  /// narrowest wins, so a price set for one size overrides a general one. An option
+  /// priced for a *different* variant never appears.
+  Future<Result<List<MenuItemOption>>> loadOptionsForVariant(String variantId);
+
+  /// Options that apply to a product without needing a size.
+  ///
+  /// Use this for something sold at one price, such as a burger. Size-dependent
+  /// options are deliberately excluded, because their price is undefined until a size
+  /// is known; for a pizza, call [loadOptionsForVariant] instead.
+  ///
+  /// Combines product-scoped, category-scoped and global options, with the same
+  /// narrowest-wins precedence.
   Future<Result<List<MenuItemOption>>> loadOptionsForItem(String menuItemId);
 
-  /// Every active option, scoped and global.
+  /// Every active option across all scopes, for menu maintenance and reporting.
+  ///
+  /// Not for the billing screen: it returns rows for every size of every pizza, with
+  /// no indication of which one applies.
   Future<Result<List<MenuItemOption>>> loadAllOptions();
 
   Future<Result<void>> saveCategory(MenuCategory category);

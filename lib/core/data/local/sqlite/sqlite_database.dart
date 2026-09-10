@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 import 'migrations/m001_initial_schema.dart';
 import 'migrations/m002_seed_menu.dart';
 import 'migrations/m003_seed_menu_products.dart';
+import 'migrations/m004_scoped_menu_options.dart';
 import 'migrations/migration.dart';
 import 'migrations/migration_runner.dart';
 
@@ -25,6 +26,7 @@ class SqliteDatabase {
     const M001InitialSchema(),
     const M002SeedMenu(),
     const M003SeedMenuProducts(),
+    const M004ScopedMenuOptions(),
   ]);
 
   /// File name of the database inside the platform's databases directory.

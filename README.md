@@ -10,13 +10,32 @@ migrations, domain models, repositories and the full Brisko Pizza menu are in pl
 and tested. No screen is implemented beyond the navigation shell, and no cloud
 backend is connected.
 
-The seed holds 12 categories, 64 products, 55 size variants and 11 options,
+The seed holds 12 categories, 64 products, 55 size variants and 171 option rows,
 transcribed from the outlet's printed menu. Two prices are absent because the menu
 does not print them; see `MenuSeedData.pendingFromMenuImage`.
 
-Known modelling gap: `menu_item_options` holds one price per row, but the menu prices
-add-ons per pizza size. Each size is currently a separate option row with the size in
-its name. Two additive nullable columns would model it properly.
+## Menu option scope
+
+An option's price often depends on the size chosen: Extra Cheese is ₹50 on a Small
+and ₹90 on a Large. That is expressed as relationships, never as text in the name.
+`menu_item_options` carries three nullable scope columns, narrowest first:
+
+| Column set | Applies to |
+|---|---|
+| `variantId` | one exact size of one product |
+| `menuItemId` | one product, any size |
+| `categoryId` | every product in a category |
+| none | every product |
+
+Callers do not read these. `MenuRepository.loadOptionsForVariant` takes the chosen
+variant and returns a ready list at the right prices, combining all four scopes and
+letting the narrowest win where a name is reachable through several.
+`loadOptionsForItem` is for products sold at a single price and deliberately excludes
+size-dependent options, whose price is undefined without a size.
+
+Because a variant row exists per product and size, there is no shared "Small" to
+point at, so the ten priced option cells on the menu expand to 170 rows across the
+seventeen pizzas, plus Ketchup as the only global option.
 
 ## Structure
 

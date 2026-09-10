@@ -6,7 +6,11 @@ import '../seed/menu_seed_data.dart';
 import '../sqlite_tables.dart';
 import 'migration.dart';
 
-/// Seeds the real Brisko Pizza menu.
+/// Seeds the real Brisko Pizza menu: categories, products and size variants.
+///
+/// Options are not seeded here. They are scoped by `variantId`, a column that
+/// migration v4 adds, so v4 owns them. See [seed] for why that keeps a fresh install
+/// and an upgraded one identical.
 ///
 /// ## Idempotency
 ///
@@ -97,20 +101,12 @@ class M002SeedMenu implements Migration {
       }, conflictAlgorithm: ConflictAlgorithm.ignore);
     }
 
-    for (final SeedOption option in MenuSeedData.options) {
-      await db.insert(SqliteTables.menuItemOptions, <String, Object?>{
-        SyncColumns.id: option.id,
-        SyncColumns.createdAt: now,
-        SyncColumns.updatedAt: now,
-        SyncColumns.isDeleted: 0,
-        SyncColumns.syncState: syncedState,
-        'menuItemId': option.menuItemId,
-        'name': option.name,
-        'optionType': option.optionTypeName,
-        'pricePaise': Money.parse(option.priceRupees).paise,
-        'displayOrder': option.displayOrder,
-        'isActive': 1,
-      }, conflictAlgorithm: ConflictAlgorithm.ignore);
-    }
+    // Options are seeded by migration v4, not here. They need the `variantId` and
+    // `categoryId` scope columns, which v4 is the migration that adds, so writing
+    // them at this point would fail against the v1 table on a fresh install.
+    //
+    // Both paths still converge on the same rows: a fresh install gets them when v4
+    // runs a moment later, and an upgraded install gets them when v4 replaces the
+    // unscoped rows that v2 and v3 had inserted.
   }
 }
