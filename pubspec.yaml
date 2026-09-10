@@ -19,11 +19,24 @@ dependencies:
   # without pulling in a code-generation heavy framework.
   provider: 6.1.5+1
 
+  # Local database. sqflite is the plain SQLite binding, so the schema and every
+  # query stay visible in this repository rather than behind a generator.
+  sqflite: 2.4.4
+
+  # Used only to build the database file path.
+  path: 1.9.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
   flutter_lints: ^6.0.0
+
+  # Required to run SQLite inside `flutter test`. sqflite talks to the platform
+  # plugin, which does not exist in the Dart test VM; this provides the native
+  # implementation so the database layer can be tested without a device.
+  # Test-only, never shipped.
+  sqflite_common_ffi: 2.4.3
 
 flutter:
   uses-material-design: true

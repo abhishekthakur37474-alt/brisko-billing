@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 
+import 'app/bootstrap.dart';
 import 'app/brisko_app.dart';
 
 /// Entry point for the Brisko Billing POS.
 ///
-/// Kept deliberately thin. Asynchronous start-up work belongs in a bootstrap step
-/// added here later: opening local storage, initialising Firebase, loading outlet
-/// settings and starting the sync coordinator. None of that exists yet, so there
-/// is nothing to await.
-void main() {
-  runApp(const BriskoApp());
+/// Start-up is: open and migrate the local database, build the repositories, then
+/// run the UI. The database is deliberately ready before the first frame, because a
+/// till that renders before it can read its own menu is worse than one that takes a
+/// moment longer to appear.
+Future<void> main() async {
+  final AppDependencies dependencies = await bootstrap();
+  runApp(BriskoApp(dependencies: dependencies));
 }

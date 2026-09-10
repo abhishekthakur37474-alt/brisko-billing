@@ -45,8 +45,9 @@ class PosShell extends StatelessWidget {
           Expanded(child: _sectionScreen(section)),
         ],
       ),
-      bottomNavigationBar:
-          isWide ? null : _ShellNavigationBar(section: section),
+      bottomNavigationBar: isWide
+          ? null
+          : _ShellNavigationBar(section: section),
     );
   }
 

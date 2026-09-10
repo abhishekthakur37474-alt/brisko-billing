@@ -54,8 +54,10 @@ class ModulePlaceholder extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
-              Text('Planned responsibilities',
-                  style: theme.textTheme.titleSmall),
+              Text(
+                'Planned responsibilities',
+                style: theme.textTheme.titleSmall,
+              ),
               const SizedBox(height: 8),
               for (final String item in scope)
                 Padding(

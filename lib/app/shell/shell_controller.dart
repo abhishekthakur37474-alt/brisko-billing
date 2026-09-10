@@ -13,7 +13,7 @@ import 'pos_section.dart';
 /// no build logic.
 class ShellController extends ChangeNotifier {
   ShellController({PosSection initialSection = PosSection.dashboard})
-      : _section = initialSection;
+    : _section = initialSection;
 
   PosSection _section;
 

@@ -14,11 +14,11 @@ class SyncStatusSnapshot {
 
   /// State before anything has been observed.
   const SyncStatusSnapshot.initial()
-      : isOnline = false,
-        isSyncing = false,
-        pendingCount = 0,
-        lastSyncedAt = null,
-        lastError = null;
+    : isOnline = false,
+      isSyncing = false,
+      pendingCount = 0,
+      lastSyncedAt = null,
+      lastError = null;
 
   final bool isOnline;
 

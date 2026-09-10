@@ -47,10 +47,7 @@ class OutboxEntry {
   /// Message from the most recent failed attempt, for diagnostics.
   final String? lastError;
 
-  OutboxEntry copyWith({
-    int? attemptCount,
-    String? lastError,
-  }) {
+  OutboxEntry copyWith({int? attemptCount, String? lastError}) {
     return OutboxEntry(
       id: id,
       collection: collection,

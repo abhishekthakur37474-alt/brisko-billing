@@ -5,29 +5,70 @@ single billing terminal, primarily online with offline-capable billing.
 
 ## Status
 
-Project skeleton only. The architecture, theme and navigation shell are in place.
-No feature module is implemented yet, and no backend is connected.
+Data foundation complete, and the real menu is loaded. The SQLite schema,
+migrations, domain models, repositories and the full Brisko Pizza menu are in place
+and tested. No screen is implemented beyond the navigation shell, and no cloud
+backend is connected.
+
+The seed holds 12 categories, 64 products, 55 size variants and 11 options,
+transcribed from the outlet's printed menu. Two prices are absent because the menu
+does not print them; see `MenuSeedData.pendingFromMenuImage`.
+
+Known modelling gap: `menu_item_options` holds one price per row, but the menu prices
+add-ons per pizza size. Each size is currently a separate option row with the size in
+its name. Two additive nullable columns would model it properly.
 
 ## Structure
 
 ```
 lib/
   main.dart                  entry point
-  app/                       root widget, routes, navigation shell
+  app/                       root widget, routes, shell, dependency wiring
   core/                      cross-cutting infrastructure
     constants/
     theme/
     error/                   AppFailure hierarchy
+    money/                   Money value type (integer paise)
     utils/                   Result type, device-side id generation
-    data/                    storage and synchronisation contracts
-      sync/
+    data/
+      local_store.dart       storage contract
+      remote_store.dart      cloud contract
+      local/sqlite/          the only place SQL lives
+        migrations/
+        seed/
+      remote/                no-op remote until a backend exists
+      sync/                  outbox and sync contracts
       connectivity/
   features/<feature>/        one folder per business capability
+    domain/models/
+    domain/repositories/     abstract contract
+    data/repositories/       SQLite implementation
     presentation/screens/
   shared/widgets/            widgets reused across features
 ```
 
-Feature folders gain `domain/` and `data/` subfolders as each module is built.
+## Money and quantities
+
+Money is an exact integer count of **paise**, wrapped in `Money`. Columns holding it
+are `INTEGER` and suffixed `Paise`. `double` is never used for money: binary floating
+point cannot represent most decimal fractions, so a bill summing many lines would
+drift and produce a legally incorrect GST invoice.
+
+Tax and discount rates are integer **basis points** (10000 = 100%). Rounding happens
+in exactly one place, `Money.applyRate`, half away from zero.
+
+Fractional stock quantities are integer **thousandths** of the unit, in columns
+suffixed `Milli`, for the same reason.
+
+## Historical accuracy
+
+Order lines, line options and kitchen slip lines store name and price *snapshots*
+taken at the moment of sale. Nothing recomputes a historical bill from the menu
+tables, so re-pricing or renaming a product cannot alter a bill that has already
+been printed.
+
+Deletion is soft everywhere (`isDeleted`), so a record removed offline can still tell
+the cloud it was removed, and so history stays auditable.
 
 ## Architecture
 

@@ -19,31 +19,30 @@ sealed class Result<T> {
 
   /// The value on success, or `null` on failure.
   T? get valueOrNull => switch (this) {
-        Ok<T>(:final T value) => value,
-        Err<T>() => null,
-      };
+    Ok<T>(:final T value) => value,
+    Err<T>() => null,
+  };
 
   /// The failure on error, or `null` on success.
   AppFailure? get failureOrNull => switch (this) {
-        Ok<T>() => null,
-        Err<T>(:final AppFailure failure) => failure,
-      };
+    Ok<T>() => null,
+    Err<T>(:final AppFailure failure) => failure,
+  };
 
   /// Collapses both branches into a single value.
   R fold<R>({
     required R Function(T value) onOk,
     required R Function(AppFailure failure) onErr,
-  }) =>
-      switch (this) {
-        Ok<T>(:final T value) => onOk(value),
-        Err<T>(:final AppFailure failure) => onErr(failure),
-      };
+  }) => switch (this) {
+    Ok<T>(:final T value) => onOk(value),
+    Err<T>(:final AppFailure failure) => onErr(failure),
+  };
 
   /// Transforms a successful value, passing failures through untouched.
   Result<R> map<R>(R Function(T value) transform) => switch (this) {
-        Ok<T>(:final T value) => Ok<R>(transform(value)),
-        Err<T>(:final AppFailure failure) => Err<R>(failure),
-      };
+    Ok<T>(:final T value) => Ok<R>(transform(value)),
+    Err<T>(:final AppFailure failure) => Err<R>(failure),
+  };
 }
 
 final class Ok<T> extends Result<T> {
