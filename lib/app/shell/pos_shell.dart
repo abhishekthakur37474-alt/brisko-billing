@@ -6,8 +6,8 @@ import '../../features/billing/presentation/screens/billing_screen.dart';
 import '../../features/customers/presentation/screens/customers_screen.dart';
 import '../../features/dashboard/presentation/screens/dashboard_screen.dart';
 import '../../features/inventory/presentation/screens/inventory_screen.dart';
+import '../../features/kot/presentation/screens/kitchen_screen.dart';
 import '../../features/menu/presentation/screens/menu_screen.dart';
-import '../../features/orders/presentation/screens/orders_screen.dart';
 import '../../features/reports/presentation/screens/reports_screen.dart';
 import '../../features/settings/presentation/screens/settings_screen.dart';
 import 'pos_section.dart';
@@ -56,7 +56,10 @@ class PosShell extends StatelessWidget {
     return switch (section) {
       PosSection.dashboard => const DashboardScreen(),
       PosSection.billing => const BillingScreen(),
-      PosSection.orders => const OrdersScreen(),
+      // The Orders section is the kitchen board. For this outlet, what the counter
+      // needs from a settled order is what the kitchen still has to make; bill
+      // history, reprinting and refunds are separate later work.
+      PosSection.orders => const KitchenScreen(),
       PosSection.menu => const MenuScreen(),
       PosSection.inventory => const InventoryScreen(),
       PosSection.customers => const CustomersScreen(),

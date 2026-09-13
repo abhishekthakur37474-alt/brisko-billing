@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../features/billing/presentation/screens/checkout_screen.dart';
+import '../../features/billing/presentation/screens/held_bills_screen.dart';
 import '../shell/pos_shell.dart';
 
 /// Named routes for screens that open on top of the shell.
@@ -14,9 +16,27 @@ class AppRoutes {
   /// Entry point of the application.
   static const String home = '/';
 
+  /// Bill settlement, pushed over the shell.
+  ///
+  /// A route rather than a shell section: the billing screen stays as it was
+  /// underneath, and the cashier can step back out of settlement without having
+  /// committed anything. The screen takes the cart from the billing controller when
+  /// it is pushed, so the route carries no arguments.
+  static const String checkout = '/checkout';
+
+  /// The bills put aside at the counter, pushed over the shell.
+  ///
+  /// A route rather than a shell section for the same reason as [checkout]: the billing
+  /// screen stays as it was underneath, and resuming a bill returns to it with the bill in
+  /// the cart. The screen reads the held bills for itself, so the route carries no
+  /// arguments.
+  static const String heldBills = '/held-bills';
+
   static Map<String, WidgetBuilder> routes() {
     return <String, WidgetBuilder>{
       home: (BuildContext context) => const PosShell(),
+      checkout: (BuildContext context) => const CheckoutScreen(),
+      heldBills: (BuildContext context) => const HeldBillsScreen(),
     };
   }
 

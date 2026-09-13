@@ -40,6 +40,17 @@ final class ValidationFailure extends AppFailure {
   const ValidationFailure(super.message, {super.cause});
 }
 
+/// A printer could not be reached, or refused a document.
+///
+/// Its own failure type because it is the one failure that must never be treated as a
+/// failed operation upstream. A settled bill whose receipt did not print is a
+/// completely successful sale with a paper problem, and the cashier has to be told
+/// exactly that. Every other failure here means something did not happen; this one
+/// means something happened and was not printed.
+final class PrinterFailure extends AppFailure {
+  const PrinterFailure(super.message, {super.cause});
+}
+
 /// An unclassified error. Indicates a bug rather than an operational condition.
 final class UnexpectedFailure extends AppFailure {
   const UnexpectedFailure(super.message, {super.cause});

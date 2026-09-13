@@ -32,9 +32,10 @@ void main() {
     test('reports the schema version the migrations define', () async {
       final int version = await database.database.getVersion();
       expect(version, SqliteDatabase.schemaVersion);
-      // Four migrations: the schema, the category seed, the product seed, and the
-      // option scope columns.
-      expect(SqliteDatabase.schemaVersion, 4);
+      // Eight migrations: the schema, the category seed, the product seed, the
+      // option scope columns, the KOT order snapshots, recipes with automatic
+      // stock deduction, held bills, and refunds.
+      expect(SqliteDatabase.schemaVersion, 8);
     });
 
     test('creates every table the POS needs', () async {
@@ -61,6 +62,9 @@ void main() {
           SqliteTables.stockMovements,
           SqliteTables.kotRecords,
           SqliteTables.kotItems,
+          SqliteTables.kotItemOptions,
+          SqliteTables.recipeIngredients,
+          SqliteTables.orderInventoryDeductions,
           SqliteTables.settings,
           SqliteTables.outbox,
         ]),

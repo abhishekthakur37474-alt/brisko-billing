@@ -3,6 +3,7 @@ import '../../../../core/data/local/sqlite/sqlite_tables.dart';
 import '../../../../core/data/sync/sync_state.dart';
 import '../../../../core/data/sync/syncable_entity.dart';
 import 'stock_movement_type.dart';
+import 'stock_quantity.dart';
 
 /// One entry in the stock ledger.
 ///
@@ -81,6 +82,20 @@ class StockMovement implements SyncableEntity {
     final int direction = movementType.direction;
     // An adjustment already carries its own sign.
     return direction == 0 ? quantityMilli : quantityMilli.abs() * direction;
+  }
+
+  /// True when settlement wrote this row from a configured recipe. Its
+  /// [referenceId] is the settled order id.
+  bool get isSale => movementType == StockMovementType.sale;
+
+  /// The effect on the balance, always signed, for example `-0.15` or `+10`.
+  ///
+  /// Explicitly signed even when positive, because a stock ledger read down a column
+  /// is only legible if every row states its direction.
+  String get signedQuantityDisplay {
+    final int signed = signedQuantityMilli;
+    final String rendered = StockQuantity.format(signed);
+    return signed < 0 ? rendered : '+$rendered';
   }
 
   StockMovement copyWith({

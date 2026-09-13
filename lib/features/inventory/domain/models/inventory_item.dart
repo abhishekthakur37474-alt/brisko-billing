@@ -2,21 +2,24 @@ import '../../../../core/data/local/sqlite/row.dart';
 import '../../../../core/data/local/sqlite/sqlite_tables.dart';
 import '../../../../core/data/sync/sync_state.dart';
 import '../../../../core/data/sync/syncable_entity.dart';
+import 'stock_quantity.dart';
+import 'stock_unit.dart';
 
 /// A tracked stock item, such as flour or cheese.
 ///
 /// ## Quantity representation
 ///
-/// Quantities are exact integer thousandths of the unit, held in
-/// [currentQuantityMilli]. `2.5 kg` is `2500`.
+/// Quantities are exact integer thousandths of [unit], held in
+/// [currentQuantityMilli]. `2.5 kg` is `2500`. See [StockQuantity] for why.
 ///
-/// The reasoning matches money: stock arrives and is consumed in fractional
-/// amounts, and a running balance updated with `double` accumulates error until the
-/// recorded quantity stops matching the shelf. Thousandths give three decimal
-/// places, which covers grams within a kilogram and millilitres within a litre.
+/// ## The balance is a cache
 ///
-/// There is no recipe or ingredient linkage yet, so nothing deducts stock
-/// automatically. Movements are recorded explicitly.
+/// [currentQuantityMilli] is a running total maintained by the repository alongside
+/// the `stock_movements` ledger, in the same transaction. The ledger is the record of
+/// what happened; this field exists so the inventory screen does not have to sum a
+/// year of movements to show a number. Nothing outside the repository may write it,
+/// which is why saving an item cannot change it — a balance moves only by recording a
+/// movement.
 class InventoryItem implements SyncableEntity {
   const InventoryItem({
     required this.id,
@@ -35,7 +38,7 @@ class InventoryItem implements SyncableEntity {
     return InventoryItem(
       id: row.requireString(SyncColumns.id),
       name: row.requireString('name'),
-      unit: row.requireString('unit'),
+      unit: StockUnit.read(row.requireString('unit')),
       currentQuantityMilli: row.optionalInt('currentQuantityMilli'),
       minimumQuantityMilli: row.optionalInt('minimumQuantityMilli'),
       isActive: row.requireBool('isActive'),
@@ -48,45 +51,28 @@ class InventoryItem implements SyncableEntity {
 
   /// Converts a display quantity such as `2.5` into thousandths.
   ///
-  /// Takes a string rather than a number so no `double` ever enters the stock
-  /// ledger. Throws [FormatException] on a value with more than three decimals.
-  static int parseQuantity(String value) {
-    final RegExpMatch? match = RegExp(r'^(-)?(\d+)(?:\.(\d{1,3}))?$')
-        .firstMatch(value.trim());
-    if (match == null) {
-      throw FormatException('Not a valid quantity', value);
-    }
-    final int whole = int.parse(match.group(2)!);
-    final String fraction = (match.group(3) ?? '').padRight(3, '0');
-    final int total =
-        whole * 1000 + int.parse(fraction.isEmpty ? '0' : fraction);
-    return match.group(1) == '-' ? -total : total;
-  }
+  /// Delegates to [StockQuantity.parse], which recipes and movements also use, so
+  /// there is one quantity representation across the feature rather than one per
+  /// model. Throws [FormatException] on a value with more than three decimals.
+  static int parseQuantity(String value) => StockQuantity.parse(value);
 
   /// Renders thousandths as a trimmed decimal string, for example `2.5`.
-  static String formatQuantity(int milli) {
-    final int absolute = milli.abs();
-    final String whole = (absolute ~/ 1000).toString();
-    final String fraction = (absolute % 1000)
-        .toString()
-        .padLeft(3, '0')
-        .replaceAll(RegExp(r'0+$'), '');
-    final String sign = milli.isNegative ? '-' : '';
-    return fraction.isEmpty ? '$sign$whole' : '$sign$whole.$fraction';
-  }
+  static String formatQuantity(int milli) => StockQuantity.format(milli);
 
   @override
   final String id;
 
   final String name;
 
-  /// Unit of measure as free text, for example `kg`, `litre`, `piece`.
-  final String unit;
+  /// Unit of measure. A closed set, so a recipe written against this item is
+  /// measured in the same thing the shelf is counted in.
+  final StockUnit unit;
 
-  /// Running balance, in thousandths of [unit].
+  /// Running balance, in thousandths of [unit]. Maintained by the repository.
   final int currentQuantityMilli;
 
-  /// Threshold below which the item is reported as low, in thousandths.
+  /// Threshold at or below which the item is reported as low, in thousandths.
+  /// Zero means the item is not monitored.
   final int minimumQuantityMilli;
 
   final bool isActive;
@@ -102,16 +88,36 @@ class InventoryItem implements SyncableEntity {
   @override
   final SyncState syncState;
 
-  /// True when the balance has fallen to or below the reorder threshold. A
-  /// threshold of zero means the item is not monitored.
+  /// True when the balance has fallen to or below the reorder threshold.
+  ///
+  /// A threshold of zero means the item is not monitored, rather than meaning
+  /// everything with an empty shelf is urgent. Without that, every item the operator
+  /// has not set a threshold for would sit permanently in the low-stock list and the
+  /// list would stop being read.
   bool get isLow =>
       minimumQuantityMilli > 0 && currentQuantityMilli <= minimumQuantityMilli;
 
-  String get currentQuantityDisplay => formatQuantity(currentQuantityMilli);
+  /// True when the balance is monitored at all.
+  bool get isMonitored => minimumQuantityMilli > 0;
+
+  String get currentQuantityDisplay =>
+      StockQuantity.format(currentQuantityMilli);
+
+  String get minimumQuantityDisplay =>
+      StockQuantity.format(minimumQuantityMilli);
+
+  /// Balance with its unit, for example `2.5 kg`.
+  String get currentQuantityWithUnit => unit.describe(currentQuantityDisplay);
+
+  /// Threshold with its unit, for example `1 kg`.
+  String get minimumQuantityWithUnit => unit.describe(minimumQuantityDisplay);
+
+  /// True when [milli] can be taken off this item's balance without going negative.
+  bool canRemove(int milli) => currentQuantityMilli - milli.abs() >= 0;
 
   InventoryItem copyWith({
     String? name,
-    String? unit,
+    StockUnit? unit,
     int? currentQuantityMilli,
     int? minimumQuantityMilli,
     bool? isActive,
@@ -142,7 +148,7 @@ class InventoryItem implements SyncableEntity {
       SyncColumns.isDeleted: SqliteValue.fromBool(isDeleted),
       SyncColumns.syncState: syncState.name,
       'name': name,
-      'unit': unit,
+      'unit': unit.name,
       'currentQuantityMilli': currentQuantityMilli,
       'minimumQuantityMilli': minimumQuantityMilli,
       'isActive': SqliteValue.fromBool(isActive),

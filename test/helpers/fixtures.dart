@@ -2,7 +2,11 @@ import 'package:brisko_billing/core/money/money.dart';
 import 'package:brisko_billing/core/utils/entity_id.dart';
 import 'package:brisko_billing/features/customers/domain/models/customer.dart';
 import 'package:brisko_billing/features/inventory/domain/models/inventory_item.dart';
+import 'package:brisko_billing/features/inventory/domain/models/recipe_ingredient.dart';
+import 'package:brisko_billing/features/inventory/domain/models/stock_quantity.dart';
+import 'package:brisko_billing/features/inventory/domain/models/stock_unit.dart';
 import 'package:brisko_billing/features/kot/domain/models/kot_item.dart';
+import 'package:brisko_billing/features/kot/domain/models/kot_item_option.dart';
 import 'package:brisko_billing/features/kot/domain/models/kot_record.dart';
 import 'package:brisko_billing/features/kot/domain/models/kot_status.dart';
 import 'package:brisko_billing/features/menu/domain/models/menu_category.dart';
@@ -123,6 +127,11 @@ class Fixtures {
     );
   }
 
+  /// A bill header.
+  ///
+  /// Pass [createdAt] to place the bill on a particular day, which is what the reports
+  /// tests need: "today" and "yesterday" have to be arranged rather than waited for.
+  /// Defaults to now, so every existing caller is unaffected.
   static Order order({
     required String orderNumber,
     String? id,
@@ -134,7 +143,9 @@ class Fixtures {
     String tax = '10.00',
     String total = '210.00',
     String? notes,
+    DateTime? createdAt,
   }) {
+    final DateTime at = createdAt?.toUtc() ?? _now;
     return Order(
       id: id ?? EntityId.generate(prefix: 'ord'),
       orderNumber: orderNumber,
@@ -146,8 +157,8 @@ class Fixtures {
       taxAmount: Money.parse(tax),
       totalAmount: Money.parse(total),
       notes: notes,
-      createdAt: _now,
-      updatedAt: _now,
+      createdAt: at,
+      updatedAt: at,
     );
   }
 
@@ -161,7 +172,9 @@ class Fixtures {
     String unitPrice = '100.00',
     String total = '200.00',
     String? notes,
+    DateTime? createdAt,
   }) {
+    final DateTime at = createdAt?.toUtc() ?? _now;
     return OrderItem(
       id: id ?? EntityId.generate(prefix: 'oit'),
       orderId: orderId,
@@ -172,8 +185,8 @@ class Fixtures {
       unitPrice: Money.parse(unitPrice),
       totalAmount: Money.parse(total),
       notes: notes,
-      createdAt: _now,
-      updatedAt: _now,
+      createdAt: at,
+      updatedAt: at,
     );
   }
 
@@ -183,15 +196,17 @@ class Fixtures {
     String optionName = 'Extra Cheese',
     String price = '30.00',
     int quantity = 1,
+    DateTime? createdAt,
   }) {
+    final DateTime at = createdAt?.toUtc() ?? _now;
     return OrderItemOption(
       id: id ?? EntityId.generate(prefix: 'oio'),
       orderItemId: orderItemId,
       optionNameSnapshot: optionName,
       price: Money.parse(price),
       quantity: quantity,
-      createdAt: _now,
-      updatedAt: _now,
+      createdAt: at,
+      updatedAt: at,
     );
   }
 
@@ -202,7 +217,9 @@ class Fixtures {
     String amount = '210.00',
     PaymentStatus status = PaymentStatus.completed,
     String? reference = 'TEST-REF-1',
+    DateTime? createdAt,
   }) {
+    final DateTime at = createdAt?.toUtc() ?? _now;
     return Payment(
       id: id ?? EntityId.generate(prefix: 'pay'),
       orderId: orderId,
@@ -210,15 +227,22 @@ class Fixtures {
       amount: Money.parse(amount),
       reference: reference,
       status: status,
-      createdAt: _now,
-      updatedAt: _now,
+      createdAt: at,
+      updatedAt: at,
     );
   }
 
+  /// A stock item with a starting balance.
+  ///
+  /// [currentQuantity] is set directly rather than through a stock-in movement, which
+  /// is the one liberty the fixtures take with the ledger. Tests need a shelf that
+  /// already holds something without three lines of arrangement for every item; the
+  /// inventory screen cannot do this, because the repository refuses a save that
+  /// changes an existing item's balance.
   static InventoryItem inventoryItem({
     String? id,
     String name = 'Test Cheese',
-    String unit = 'kg',
+    StockUnit unit = StockUnit.kilogram,
     String currentQuantity = '10',
     String minimumQuantity = '2',
   }) {
@@ -226,8 +250,30 @@ class Fixtures {
       id: id ?? EntityId.generate(prefix: 'inv'),
       name: name,
       unit: unit,
-      currentQuantityMilli: InventoryItem.parseQuantity(currentQuantity),
-      minimumQuantityMilli: InventoryItem.parseQuantity(minimumQuantity),
+      currentQuantityMilli: StockQuantity.parse(currentQuantity),
+      minimumQuantityMilli: StockQuantity.parse(minimumQuantity),
+      createdAt: _now,
+      updatedAt: _now,
+    );
+  }
+
+  /// A recipe line: how much of one stock item a single sold unit uses.
+  ///
+  /// Pass [variantId] for a size's own recipe, or leave it out for the product-level
+  /// recipe every size falls back to.
+  static RecipeIngredient recipeIngredient({
+    required String menuItemId,
+    required String inventoryItemId,
+    String? id,
+    String? variantId,
+    String quantity = '0.1',
+  }) {
+    return RecipeIngredient(
+      id: id ?? EntityId.generate(prefix: 'rcp'),
+      menuItemId: menuItemId,
+      variantId: variantId,
+      inventoryItemId: inventoryItemId,
+      quantityMilli: StockQuantity.parse(quantity),
       createdAt: _now,
       updatedAt: _now,
     );
@@ -237,13 +283,37 @@ class Fixtures {
     required String orderId,
     required String kotNumber,
     String? id,
+    String orderNumber = '20260911-0001',
+    OrderType orderType = OrderType.takeaway,
     KotStatus status = KotStatus.pending,
+    String? notes,
+    DateTime? createdAt,
   }) {
+    final DateTime at = createdAt?.toUtc() ?? _now;
     return KotRecord(
       id: id ?? EntityId.generate(prefix: 'kot'),
       orderId: orderId,
+      orderNumber: orderNumber,
       kotNumber: kotNumber,
+      orderType: orderType,
       status: status,
+      notes: notes,
+      createdAt: at,
+      updatedAt: at,
+    );
+  }
+
+  static KotItemOption kotItemOption({
+    required String kotItemId,
+    String? id,
+    String optionName = 'Extra Cheese',
+    int quantity = 1,
+  }) {
+    return KotItemOption(
+      id: id ?? EntityId.generate(prefix: 'kio'),
+      kotItemId: kotItemId,
+      optionNameSnapshot: optionName,
+      quantity: quantity,
       createdAt: _now,
       updatedAt: _now,
     );

@@ -14,11 +14,21 @@ class SqliteTables {
   static const String orderItems = 'order_items';
   static const String orderItemOptions = 'order_item_options';
   static const String payments = 'payments';
+
+  /// Money handed back on a completed bill. A separate table from [payments] so the
+  /// original tender is never rewritten; see `M008Refunds`.
+  static const String refunds = 'refunds';
   static const String customers = 'customers';
   static const String inventoryItems = 'inventory_items';
   static const String stockMovements = 'stock_movements';
+  static const String recipeIngredients = 'recipe_ingredients';
+  static const String orderInventoryDeductions = 'order_inventory_deductions';
   static const String kotRecords = 'kot_records';
   static const String kotItems = 'kot_items';
+  static const String kotItemOptions = 'kot_item_options';
+  static const String heldBills = 'held_bills';
+  static const String heldBillLines = 'held_bill_lines';
+  static const String heldBillLineOptions = 'held_bill_line_options';
   static const String settings = 'settings';
   static const String outbox = 'outbox';
 }

@@ -1,0 +1,335 @@
+import '../../../../core/money/money.dart';
+import '../../../orders/domain/models/order_type.dart';
+import '../../../payments/domain/models/payment_method.dart';
+import 'business_identity.dart';
+import 'upi_payment_request.dart';
+
+/// Something that can be printed.
+///
+/// ## Why print documents are their own models
+///
+/// A receipt is not an order and a kitchen slip is not a `KotRecord`. The domain
+/// entities carry ids, sync state, soft-delete flags and foreign keys, none of which
+/// belongs on paper, and they are shaped for storage rather than for a 48-column
+/// layout. Printing from them directly would tie the paper layout to the schema, so
+/// that adding a column meant reasoning about the receipt.
+///
+/// These documents are instead a flat, self-contained description of one piece of
+/// paper: everything needed to render it and nothing else. They are built once from
+/// persisted rows and are then independent of the database, which is what lets a
+/// formatter be tested without one.
+///
+/// ## No Flutter
+///
+/// Nothing in this library imports `flutter`. A print document is not a widget tree
+/// and a formatter is not a renderer; the whole printing layer is plain Dart, which is
+/// why every test in it runs without a binding.
+///
+/// ## Why the family is sealed, and why it is one file
+///
+/// The set of documents is closed, so a formatter switching over it is exhaustive by
+/// the compiler: adding a document type becomes a compile error at every formatter
+/// rather than a blank page at the counter. Dart requires the subtypes of a sealed
+/// type to live in the same library as the base, which is why the three documents and
+/// their line types are declared here together rather than in a file each. They are
+/// one concept — the paperwork this outlet produces — and the sealing is what makes
+/// that concept enforceable.
+sealed class PrintDocument {
+  const PrintDocument();
+
+  /// Short description used in a print job and in an operator-facing message, for
+  /// example `Receipt 20260911-0001`.
+  String get title;
+}
+
+// ------------------------------------------------------------------- receipt ---
+
+/// The customer's bill, as one piece of 80mm paper.
+///
+/// Every amount is a [Money] in exact paise. Nothing on a receipt is a `double`: the
+/// figures here are the ones already committed to the orders table, carried across
+/// unchanged, so the paper and the database can never disagree by a paisa.
+///
+/// The lines are snapshots of what was sold, taken from the order rows rather than from
+/// the menu, so reprinting this bill next month reproduces the original document.
+final class CustomerReceipt extends PrintDocument {
+  const CustomerReceipt({
+    required this.business,
+    required this.orderNumber,
+    required this.orderType,
+    required this.issuedAt,
+    required this.lines,
+    required this.totals,
+    required this.paymentMethod,
+    this.customerPhone,
+    this.upiPayment,
+    this.notes,
+    this.isReprint = false,
+  });
+
+  /// Outlet details. Fields the operator has not configured are absent and are not
+  /// printed.
+  final BusinessIdentity business;
+
+  /// Number the customer was given. The one thing they will quote back.
+  final String orderNumber;
+
+  final OrderType orderType;
+
+  /// When the bill was settled, in UTC. Rendered in local time.
+  final DateTime issuedAt;
+
+  final List<CustomerReceiptLine> lines;
+
+  final CustomerReceiptTotals totals;
+
+  final PaymentMethod paymentMethod;
+
+  /// Customer's number, when one was taken. Absent for a walk-in.
+  final String? customerPhone;
+
+  /// Data for the payment QR, or `null` when no UPI address is configured.
+  final UpiPaymentRequest? upiPayment;
+
+  /// Order-level note, printed under the lines.
+  final String? notes;
+
+  /// True when this is a second copy of a bill already given to the customer.
+  ///
+  /// Marked on the paper so a reprint cannot be mistaken for a second sale during a
+  /// cash-up.
+  final bool isReprint;
+
+  @override
+  String get title => 'Receipt $orderNumber';
+
+  bool get hasCustomerPhone =>
+      customerPhone != null && customerPhone!.trim().isNotEmpty;
+
+  bool get hasUpiPayment => upiPayment != null;
+
+  bool get hasNotes => notes != null && notes!.trim().isNotEmpty;
+
+  /// Portions sold across every line, for the item count on the paper.
+  int get totalQuantity => lines.fold<int>(
+    0,
+    (int running, CustomerReceiptLine line) => running + line.quantity,
+  );
+}
+
+/// One charged line of a receipt.
+class CustomerReceiptLine {
+  const CustomerReceiptLine({
+    required this.name,
+    required this.quantity,
+    required this.unitPrice,
+    required this.lineTotal,
+    this.variantName,
+    this.options = const <CustomerReceiptLineOption>[],
+    this.notes,
+  });
+
+  /// Product name as it was sold.
+  final String name;
+
+  /// Size as it was sold, or `null` for a single-price product.
+  final String? variantName;
+
+  final int quantity;
+
+  /// Price of one unit as charged, including the chosen size and its options.
+  final Money unitPrice;
+
+  /// Amount charged for the line.
+  final Money lineTotal;
+
+  final List<CustomerReceiptLineOption> options;
+
+  /// Preparation instruction, printed so the customer can see what they asked for.
+  final String? notes;
+
+  /// Name as it appears on paper, for example `Cheese Pizza (Medium)`.
+  String get displayName => variantName == null ? name : '$name ($variantName)';
+
+  bool get hasOptions => options.isNotEmpty;
+
+  bool get hasNotes => notes != null && notes!.trim().isNotEmpty;
+}
+
+/// A customisation charged on a receipt line.
+class CustomerReceiptLineOption {
+  const CustomerReceiptLineOption({
+    required this.name,
+    required this.price,
+    this.quantity = 1,
+  });
+
+  final String name;
+
+  /// Price of one portion of this option, as charged.
+  final Money price;
+
+  final int quantity;
+
+  /// What this option contributed to the line. Exact integer maths.
+  Money get total => price * quantity;
+
+  bool get isFree => price.isZero;
+}
+
+/// The money block at the foot of a receipt.
+///
+/// [discount] and [tax] are printed even when they are zero. Nothing in this build
+/// produces either, and a receipt that quietly omitted the lines would leave the
+/// customer unable to see that they were not charged tax. When a rate is configured the
+/// same block carries the real figures with no layout change.
+class CustomerReceiptTotals {
+  const CustomerReceiptTotals({
+    required this.subtotal,
+    required this.discount,
+    required this.tax,
+    required this.total,
+  });
+
+  final Money subtotal;
+
+  final Money discount;
+
+  final Money tax;
+
+  /// Amount collected. Persisted as calculated at settlement time.
+  final Money total;
+
+  bool get hasDiscount => !discount.isZero;
+
+  bool get hasTax => !tax.isZero;
+
+  /// True when subtotal minus discount plus tax is exactly the total.
+  ///
+  /// A bill whose block does not add up is worse than no bill, and because every figure
+  /// is exact paise this can be checked rather than assumed. The document source
+  /// refuses to build a receipt that fails it, so a formatter never has to decide what
+  /// to do about one.
+  bool get isConsistent => subtotal - discount + tax == total;
+}
+
+// ----------------------------------------------------------------------- kot ---
+
+/// The kitchen slip, as one piece of 80mm paper.
+///
+/// ## No money
+///
+/// There is deliberately no price, no total and no payment method anywhere in this
+/// document or its lines. The kitchen is being told what to cook; what it cost is the
+/// counter's business, and a slip carrying prices invites the kitchen to be treated as
+/// a second till. This is enforced by the type: there is no field to put an amount in,
+/// so a formatter cannot print one by accident.
+///
+/// ## Snapshots
+///
+/// Every string here was copied from the order at the moment of sale. Nothing is read
+/// from the menu, so reprinting a slip reproduces exactly what the kitchen was
+/// originally asked for.
+final class KitchenKot extends PrintDocument {
+  const KitchenKot({
+    required this.kotNumber,
+    required this.orderNumber,
+    required this.orderType,
+    required this.issuedAt,
+    required this.lines,
+    this.notes,
+    this.isReprint = false,
+  });
+
+  /// Number on the slip, so the counter and kitchen can refer to it aloud.
+  final String kotNumber;
+
+  /// Number the customer was given, so a slip can be matched to a bill.
+  final String orderNumber;
+
+  /// How the order leaves the counter. The kitchen plates a dine-in differently from a
+  /// delivery.
+  final OrderType orderType;
+
+  /// When the slip was raised, in UTC. Rendered in local time.
+  final DateTime issuedAt;
+
+  final List<KitchenKotLine> lines;
+
+  /// Order-level instruction, for example `no onion in anything`.
+  final String? notes;
+
+  /// True when the slip is being produced a second time.
+  final bool isReprint;
+
+  @override
+  String get title => 'KOT $kotNumber';
+
+  bool get hasNotes => notes != null && notes!.trim().isNotEmpty;
+
+  /// Portions the kitchen has to make across every line.
+  int get totalQuantity => lines.fold<int>(
+    0,
+    (int running, KitchenKotLine line) => running + line.quantity,
+  );
+}
+
+/// One thing the kitchen has to make.
+class KitchenKotLine {
+  const KitchenKotLine({
+    required this.name,
+    required this.quantity,
+    this.variantName,
+    this.options = const <String>[],
+    this.notes,
+  });
+
+  final String name;
+
+  /// Size as it was sold, or `null` for a single-size product.
+  final String? variantName;
+
+  final int quantity;
+
+  /// Customisation names, in the order they were added. Names only: an option's price
+  /// is not the kitchen's business.
+  final List<String> options;
+
+  /// Preparation instruction on this line, for example `no onion`.
+  final String? notes;
+
+  /// Name as it appears on paper, for example `Cheese Pizza (Medium)`.
+  String get displayName => variantName == null ? name : '$name ($variantName)';
+
+  bool get hasOptions => options.isNotEmpty;
+
+  bool get hasNotes => notes != null && notes!.trim().isNotEmpty;
+}
+
+// ----------------------------------------------------------------- test page ---
+
+/// A short document that proves the printer works, without spending a bill on it.
+///
+/// Printed from the settings screen when a printer is first connected. It exercises the
+/// parts of the path that go wrong in practice: the connection, the character width of
+/// the paper, bold, alignment, the cutter, and the QR encoder.
+///
+/// The width ruler is the useful part. A line of 48 characters that arrives wrapped
+/// means the printer is not the 80mm Font A device the layout assumes, which is exactly
+/// the mistake that is otherwise discovered on a customer's bill.
+final class PrinterTestPage extends PrintDocument {
+  const PrinterTestPage({required this.printedAt, this.qrData});
+
+  /// Data to encode into the sample QR, or `null` to omit it.
+  ///
+  /// Never a payment URI. A test page carrying a real `upi://pay` link could be scanned
+  /// by a customer and take money against no order.
+  final String? qrData;
+
+  final DateTime printedAt;
+
+  @override
+  String get title => 'Printer test page';
+
+  bool get hasQrData => qrData != null && qrData!.isNotEmpty;
+}

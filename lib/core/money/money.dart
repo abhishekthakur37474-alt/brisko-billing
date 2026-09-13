@@ -74,6 +74,26 @@ class Money implements Comparable<Money> {
   /// Multiplies by a whole count, for example a line quantity. Exact.
   Money operator *(int quantity) => Money.fromPaise(paise * quantity);
 
+  /// Divides by a whole count, truncating towards zero at the paisa.
+  ///
+  /// For an average: the mean of a day's bills is not generally a whole number of
+  /// paise, and the fraction has to go somewhere. It is dropped rather than rounded
+  /// so the figure can never read higher than the takings actually support, and
+  /// truncation is deterministic, which rounding a fraction of a paisa is not.
+  ///
+  /// This is the only division of an amount in the application, and it is integer
+  /// division: no `double` is created at any point. Use [allocate] instead when the
+  /// shares have to add back up to the original amount.
+  ///
+  /// Throws [ArgumentError] on a divisor of zero, because the mean of no bills is
+  /// not zero rupees — it does not exist, and the caller has to say what to show.
+  Money operator ~/(int divisor) {
+    if (divisor == 0) {
+      throw ArgumentError.value(divisor, 'divisor', 'Must not be zero');
+    }
+    return Money.fromPaise(paise ~/ divisor);
+  }
+
   bool operator <(Money other) => paise < other.paise;
 
   bool operator <=(Money other) => paise <= other.paise;

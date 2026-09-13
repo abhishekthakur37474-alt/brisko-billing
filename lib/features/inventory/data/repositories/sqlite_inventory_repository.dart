@@ -4,13 +4,14 @@ import '../../../../core/data/local/sqlite/sqlite_database.dart';
 import '../../../../core/data/local/sqlite/sqlite_error_mapper.dart';
 import '../../../../core/data/local/sqlite/sqlite_local_store.dart';
 import '../../../../core/data/local/sqlite/sqlite_tables.dart';
-import '../../../../core/data/sync/sync_state.dart';
+import '../../../../core/error/app_failure.dart';
 import '../../../../core/utils/entity_id.dart';
 import '../../../../core/utils/result.dart';
 import '../../domain/models/inventory_item.dart';
 import '../../domain/models/stock_movement.dart';
 import '../../domain/models/stock_movement_type.dart';
 import '../../domain/repositories/inventory_repository.dart';
+import '../stock_ledger.dart';
 
 /// SQLite implementation of [InventoryRepository].
 class SqliteInventoryRepository implements InventoryRepository {
@@ -64,7 +65,113 @@ class SqliteInventoryRepository implements InventoryRepository {
   }
 
   @override
-  Future<Result<void>> saveItem(InventoryItem item) => _items.save(item);
+  Future<Result<void>> saveItem(InventoryItem item) {
+    return SqliteErrorMapper.guard<void>(() async {
+      if (item.name.trim().isEmpty) {
+        throw ArgumentError.value(
+          item.name,
+          'name',
+          'A stock item needs a name',
+        );
+      }
+      if (item.minimumQuantityMilli < 0) {
+        throw ArgumentError.value(
+          item.minimumQuantityMilli,
+          'minimumQuantityMilli',
+          'A low stock threshold cannot be negative',
+        );
+      }
+      if (item.currentQuantityMilli < 0) {
+        throw ArgumentError.value(
+          item.currentQuantityMilli,
+          'currentQuantityMilli',
+          'A stock balance cannot be negative',
+        );
+      }
+
+      // The balance is the ledger's, not the caller's. An edit that carried a
+      // different figure would move stock with nothing to explain it, so it is
+      // refused here rather than quietly applied. New items are unaffected: there is
+      // no stored balance to contradict.
+      final List<Map<String, Object?>> existing = await _db.query(
+        SqliteTables.inventoryItems,
+        columns: <String>['currentQuantityMilli', 'name'],
+        where: '${SyncColumns.id} = ?',
+        whereArgs: <Object?>[item.id],
+        limit: 1,
+      );
+
+      if (existing.isNotEmpty) {
+        final int stored = existing.first['currentQuantityMilli']! as int;
+        if (stored != item.currentQuantityMilli) {
+          throw ArgumentError.value(
+            item.currentQuantityMilli,
+            'currentQuantityMilli',
+            'The balance of ${existing.first['name']} is changed by recording '
+                'stock in, wastage or an adjustment, not by editing the item',
+          );
+        }
+      }
+
+      await _items.save(item);
+    }, context: 'save the stock item');
+  }
+
+  @override
+  Future<Result<StockMovement>> stockIn({
+    required String inventoryItemId,
+    required int quantityMilli,
+    String? reason,
+  }) {
+    return recordMovement(
+      inventoryItemId: inventoryItemId,
+      type: StockMovementType.stockIn,
+      quantityMilli: quantityMilli,
+      reason: reason,
+    );
+  }
+
+  @override
+  Future<Result<StockMovement>> adjust({
+    required String inventoryItemId,
+    required int quantityMilli,
+    String? reason,
+  }) {
+    return recordMovement(
+      inventoryItemId: inventoryItemId,
+      type: StockMovementType.adjustment,
+      quantityMilli: quantityMilli,
+      reason: reason,
+    );
+  }
+
+  @override
+  Future<Result<StockMovement>> recordWastage({
+    required String inventoryItemId,
+    required int quantityMilli,
+    String? reason,
+  }) {
+    return recordMovement(
+      inventoryItemId: inventoryItemId,
+      type: StockMovementType.wastage,
+      quantityMilli: quantityMilli,
+      reason: reason,
+    );
+  }
+
+  @override
+  Future<Result<StockMovement>> stockOut({
+    required String inventoryItemId,
+    required int quantityMilli,
+    String? reason,
+  }) {
+    return recordMovement(
+      inventoryItemId: inventoryItemId,
+      type: StockMovementType.stockOut,
+      quantityMilli: quantityMilli,
+      reason: reason,
+    );
+  }
 
   @override
   Future<Result<StockMovement>> recordMovement({
@@ -82,6 +189,15 @@ class SqliteInventoryRepository implements InventoryRepository {
           'A movement of zero has no effect',
         );
       }
+      if (type.requiresPositiveQuantity && quantityMilli < 0) {
+        // The type already carries the direction. Accepting a negative here would
+        // mean "-2 kg of wastage", which reads as stock arriving.
+        throw ArgumentError.value(
+          quantityMilli,
+          'quantityMilli',
+          'A ${type.label.toLowerCase()} quantity has to be positive',
+        );
+      }
 
       final DateTime now = DateTime.now().toUtc();
       final StockMovement movement = StockMovement(
@@ -95,40 +211,14 @@ class SqliteInventoryRepository implements InventoryRepository {
         updatedAt: now,
       );
 
-      await _db.transaction((Transaction txn) async {
-        await txn.insert(SqliteTables.stockMovements, movement.toMap());
+      await _db.transaction(
+        (Transaction txn) =>
+            StockLedger.record(txn, movement: movement, at: now),
+      );
 
-        // Applied as a relative UPDATE rather than read-modify-write, so the
-        // balance cannot be clobbered by a concurrent movement.
-        final int updated = await txn.rawUpdate(
-          'UPDATE ${SqliteTables.inventoryItems} '
-          'SET currentQuantityMilli = currentQuantityMilli + ?, '
-          '    ${SyncColumns.updatedAt} = ?, '
-          '    ${SyncColumns.syncState} = ? '
-          'WHERE ${SyncColumns.id} = ? AND ${SyncColumns.isDeleted} = 0',
-          <Object?>[
-            movement.signedQuantityMilli,
-            now.millisecondsSinceEpoch,
-            SyncState.pending.name,
-            inventoryItemId,
-          ],
-        );
-
-        if (updated == 0) {
-          // Rolls the movement back: a ledger entry against a stock item that
-          // does not exist would corrupt the running totals.
-          throw ArgumentError.value(
-            inventoryItemId,
-            'inventoryItemId',
-            'No such stock item',
-          );
-        }
-      });
-
-      _database.notifyTablesChanged(const <String>[
-        SqliteTables.stockMovements,
-        SqliteTables.inventoryItems,
-      ]);
+      // After the commit, never inside it: a watcher that read the tables mid
+      // transaction would see a balance that might still roll back.
+      _database.notifyTablesChanged(StockLedger.tables);
 
       return movement;
     }, context: 'record the stock movement');
@@ -152,5 +242,30 @@ class SqliteInventoryRepository implements InventoryRepository {
   }
 
   @override
-  Future<Result<void>> deleteItem(String id) => _items.softDelete(id);
+  Future<Result<void>> deleteItem(String id) async {
+    // Queried here rather than through RecipeRepository so this repository owns one
+    // connection and no repository depends on another. Both tables belong to the
+    // inventory feature's data layer, so the SQL is still in one place.
+    final Result<bool> inUse = await SqliteErrorMapper.guard<bool>(() async {
+      final List<Map<String, Object?>> rows = await _db.query(
+        SqliteTables.recipeIngredients,
+        columns: <String>[SyncColumns.id],
+        where: 'inventoryItemId = ? AND isDeleted = 0',
+        whereArgs: <Object?>[id],
+        limit: 1,
+      );
+      return rows.isNotEmpty;
+    }, context: 'check whether a recipe uses this stock item');
+
+    return switch (inUse) {
+      Err<bool>(:final AppFailure failure) => Err<void>(failure),
+      Ok<bool>(value: true) => const Err<void>(
+        ValidationFailure(
+          'A recipe still uses this stock item. Remove it from the recipes '
+          'first.',
+        ),
+      ),
+      Ok<bool>() => _items.softDelete(id),
+    };
+  }
 }

@@ -56,6 +56,50 @@ class SqliteSettingsRepository implements SettingsRepository {
   Future<Result<void>> writeBool(String key, bool value) =>
       _write(key, value ? 'true' : 'false');
 
+  /// One transaction for the whole form.
+  ///
+  /// The keys are written inside `Database.transaction`, so a fault partway through
+  /// rolls the lot back and the outlet keeps the configuration it had. That is the
+  /// difference between a failed save and a half-applied one, and on a tax invoice it
+  /// matters: a new address printed above an old GSTIN is a document nobody authored.
+  ///
+  /// The table change is announced once, after the transaction commits, rather than per
+  /// key — so nothing observes the middle of a save.
+  @override
+  Future<Result<void>> writeAll(Map<String, String?> values) {
+    return SqliteErrorMapper.guard<void>(() async {
+      if (values.isEmpty) {
+        return;
+      }
+
+      final int now = DateTime.now().toUtc().millisecondsSinceEpoch;
+
+      await _db.transaction((Transaction txn) async {
+        for (final MapEntry<String, String?> entry in values.entries) {
+          final String? value = entry.value;
+          if (value == null) {
+            // A cleared field removes its row. Storing an empty string would leave two
+            // representations of "not configured" for every reader to handle.
+            await txn.delete(
+              SqliteTables.settings,
+              where: 'key = ?',
+              whereArgs: <Object?>[entry.key],
+            );
+            continue;
+          }
+
+          await SqliteUpsert.run(txn, SqliteTables.settings, <String, Object?>{
+            'key': entry.key,
+            'value': value,
+            'updatedAt': now,
+          }, conflictColumn: 'key');
+        }
+      });
+
+      database.notifyTableChanged(SqliteTables.settings);
+    }, context: 'save the settings');
+  }
+
   @override
   Future<Result<Map<String, String?>>> readAll() {
     return SqliteErrorMapper.guard<Map<String, String?>>(() async {

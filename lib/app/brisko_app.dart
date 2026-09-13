@@ -3,12 +3,23 @@ import 'package:provider/provider.dart';
 
 import '../core/constants/app_constants.dart';
 import '../core/theme/app_theme.dart';
+import '../features/billing/domain/repositories/checkout_repository.dart';
+import '../features/billing/domain/repositories/held_bill_repository.dart';
+import '../features/billing/presentation/controllers/billing_controller.dart';
 import '../features/customers/domain/repositories/customer_repository.dart';
+import '../features/inventory/domain/repositories/inventory_deduction_repository.dart';
 import '../features/inventory/domain/repositories/inventory_repository.dart';
+import '../features/inventory/domain/repositories/recipe_repository.dart';
 import '../features/kot/domain/repositories/kot_repository.dart';
 import '../features/menu/domain/repositories/menu_repository.dart';
 import '../features/orders/domain/repositories/order_repository.dart';
 import '../features/payments/domain/repositories/payment_repository.dart';
+import '../features/payments/domain/repositories/refund_repository.dart';
+import '../features/printing/domain/printers/thermal_printer.dart';
+import '../features/printing/domain/services/active_print_profile.dart';
+import '../features/printing/domain/services/print_service.dart';
+import '../features/reports/domain/repositories/sales_report_repository.dart';
+import '../features/settings/domain/active_pos_settings.dart';
 import '../features/settings/domain/repositories/settings_repository.dart';
 import 'bootstrap.dart';
 import 'routes/app_routes.dart';
@@ -46,18 +57,55 @@ class BriskoApp extends StatelessWidget {
         // would drop any active `watch` subscription.
         Provider<MenuRepository>.value(value: dependencies.menuRepository),
         Provider<OrderRepository>.value(value: dependencies.orderRepository),
+        Provider<CheckoutRepository>.value(
+          value: dependencies.checkoutRepository,
+        ),
+        Provider<HeldBillRepository>.value(
+          value: dependencies.heldBillRepository,
+        ),
         Provider<CustomerRepository>.value(
           value: dependencies.customerRepository,
         ),
         Provider<PaymentRepository>.value(
           value: dependencies.paymentRepository,
         ),
+        // Read by the stored-bill view, which is where a refund is authorised. Provided
+        // here rather than inside that dialog so the dialog can be opened from the customer
+        // history and from the reports bill list without either knowing how to build it.
+        Provider<RefundRepository>.value(value: dependencies.refundRepository),
         Provider<InventoryRepository>.value(
           value: dependencies.inventoryRepository,
         ),
+        Provider<RecipeRepository>.value(value: dependencies.recipeRepository),
+        Provider<InventoryDeductionRepository>.value(
+          value: dependencies.inventoryDeductionRepository,
+        ),
         Provider<KotRepository>.value(value: dependencies.kotRepository),
+        Provider<SalesReportRepository>.value(
+          value: dependencies.salesReportRepository,
+        ),
+        Provider<ThermalPrinter>.value(value: dependencies.printer),
+        Provider<PrintService>.value(value: dependencies.printService),
+        // The same object the print service encodes with, so a corrected column count
+        // saved in Settings lays out the next bill rather than the next launch.
+        Provider<ActivePrintProfile>.value(
+          value: dependencies.activePrintProfile,
+        ),
         Provider<SettingsRepository>.value(
           value: dependencies.settingsRepository,
+        ),
+        // The configuration read at start-up. Checkout reads the default order type from
+        // here rather than querying the settings table while a screen is building.
+        Provider<ActivePosSettings>.value(value: dependencies.activeSettings),
+        // Registered above the shell rather than inside the billing screen. The
+        // shell rebuilds the active section's widget on every navigation, so a
+        // screen-scoped cart would be thrown away the moment the cashier glanced
+        // at Orders. A half-built bill has to outlive that.
+        ChangeNotifierProvider<BillingController>(
+          create: (BuildContext context) => BillingController(
+            menuRepository: dependencies.menuRepository,
+            heldBillRepository: dependencies.heldBillRepository,
+          ),
         ),
       ],
       child: MaterialApp(

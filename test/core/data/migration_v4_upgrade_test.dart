@@ -48,7 +48,9 @@ void main() {
       database: database,
     );
 
-    expect(await database.database.getVersion(), 4);
+    // Whatever version this build defines, not a pinned number: the point of the
+    // test is that a v3 terminal reaches the current schema with its menu intact.
+    expect(await database.database.getVersion(), SqliteDatabase.schemaVersion);
 
     // Products and variants are untouched by v4.
     expect((await repository.loadCategories()).valueOrNull, hasLength(12));

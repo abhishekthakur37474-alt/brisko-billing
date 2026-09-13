@@ -23,6 +23,17 @@ abstract interface class SettingsRepository {
 
   Future<Result<void>> writeBool(String key, bool value);
 
+  /// Writes several settings as one change.
+  ///
+  /// A `null` value removes its key, which is how a cleared field is stored: an absent
+  /// row rather than an empty string, so "not configured" is one state in the table.
+  ///
+  /// Atomic. The settings screen saves a whole form at once, and a fault halfway through
+  /// a key-by-key write would leave the outlet with a new address and its old GSTIN —
+  /// two halves of two configurations, on a tax invoice. Either every value in [values]
+  /// is stored or none of them is.
+  Future<Result<void>> writeAll(Map<String, String?> values);
+
   /// Every setting, for the settings screen and for diagnostics.
   Future<Result<Map<String, String?>>> readAll();
 

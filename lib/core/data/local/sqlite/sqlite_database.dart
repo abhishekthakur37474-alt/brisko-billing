@@ -7,6 +7,10 @@ import 'migrations/m001_initial_schema.dart';
 import 'migrations/m002_seed_menu.dart';
 import 'migrations/m003_seed_menu_products.dart';
 import 'migrations/m004_scoped_menu_options.dart';
+import 'migrations/m005_kot_order_snapshots.dart';
+import 'migrations/m006_recipes_and_stock_deduction.dart';
+import 'migrations/m007_held_bills.dart';
+import 'migrations/m008_refunds.dart';
 import 'migrations/migration.dart';
 import 'migrations/migration_runner.dart';
 
@@ -27,6 +31,10 @@ class SqliteDatabase {
     const M002SeedMenu(),
     const M003SeedMenuProducts(),
     const M004ScopedMenuOptions(),
+    const M005KotOrderSnapshots(),
+    const M006RecipesAndStockDeduction(),
+    const M007HeldBills(),
+    const M008Refunds(),
   ]);
 
   /// File name of the database inside the platform's databases directory.
