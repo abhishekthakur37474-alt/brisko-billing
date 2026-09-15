@@ -155,16 +155,24 @@ class _PrintingStatus extends StatelessWidget {
     }
 
     if (controller.isPrinted) {
-      return _PrintingNote(
-        icon: Icons.print_outlined,
-        colour: AppColors.success,
-        message: 'Bill and kitchen slip printed',
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _PrintingNote(
+            icon: Icons.print_outlined,
+            colour: AppColors.success,
+            message: 'Bill and kitchen slip printed',
+          ),
+          const _ReprintActions(),
+        ],
       );
     }
 
     final String? message = controller.printMessage;
     if (message == null) {
-      return const SizedBox.shrink();
+      // Nothing has been attempted, or the notice was dismissed. The paperwork can still
+      // be sent again: the bill is on disk, and that is all a reprint needs.
+      return const _ReprintActions();
     }
 
     return Card(
@@ -216,6 +224,49 @@ class _PrintingStatus extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Sending the paperwork again, for the copy that jammed or was thrown away.
+///
+/// ## Why these are safe to press at any time
+///
+/// Both rebuild their document from the committed order and send it. Neither writes
+/// anything: no second order, no second payment, no second kitchen ticket, no stock
+/// movement and no change to the day's takings. Pressing one twice costs paper and
+/// nothing else, which is why there is no confirmation in front of them.
+///
+/// Kept quiet — text buttons under the status line rather than the primary action, because
+/// the primary action on this screen is starting the next bill and there is usually a queue.
+class _ReprintActions extends StatelessWidget {
+  const _ReprintActions();
+
+  @override
+  Widget build(BuildContext context) {
+    final CheckoutController controller = context.watch<CheckoutController>();
+
+    if (!controller.canReprint) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Wrap(
+        spacing: 4,
+        children: <Widget>[
+          TextButton.icon(
+            onPressed: controller.reprintReceipt,
+            icon: const Icon(Icons.receipt_long_outlined, size: 18),
+            label: const Text('Print receipt again'),
+          ),
+          TextButton.icon(
+            onPressed: controller.reprintKitchenSlips,
+            icon: const Icon(Icons.soup_kitchen_outlined, size: 18),
+            label: const Text('Print kitchen slip again'),
+          ),
+        ],
       ),
     );
   }

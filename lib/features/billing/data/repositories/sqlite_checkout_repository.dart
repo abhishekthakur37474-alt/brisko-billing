@@ -199,6 +199,20 @@ class SqliteCheckoutRepository implements CheckoutRepository {
       );
     }
 
+    // The money block, checked before it becomes the historical record. Exact paise on
+    // every side, so this is a real equality rather than a tolerance.
+    if (!settlement.isArithmeticSound) {
+      throw ArgumentError.value(
+        settlement.amountPayable.toDecimalString(),
+        'totals',
+        'This bill does not add up: '
+            '${settlement.totals.subtotal.toDecimalString()} less '
+            '${settlement.totals.discount.toDecimalString()} discount plus '
+            '${settlement.totals.tax.toDecimalString()} tax is not '
+            '${settlement.totals.total.toDecimalString()}',
+      );
+    }
+
     if (!settlement.isBalanced) {
       throw ArgumentError.value(
         settlement.payment.amount.toDecimalString(),

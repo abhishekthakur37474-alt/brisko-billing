@@ -20,6 +20,9 @@ void main() {
     'lib/features/billing/domain/models/cart_line.dart',
     'lib/features/billing/domain/models/cart_line_option.dart',
     'lib/features/billing/presentation/controllers/billing_controller.dart',
+    // Discount and tax, which are inputs to the total rather than amounts of their own
+    'lib/features/billing/domain/models/bill_discount.dart',
+    'lib/features/billing/domain/models/gst_rate.dart',
     // Checkout
     'lib/features/billing/domain/models/bill_totals.dart',
     'lib/features/billing/domain/models/cash_tender.dart',
@@ -28,14 +31,35 @@ void main() {
     'lib/features/billing/data/repositories/sqlite_checkout_repository.dart',
   ];
 
-  /// The one file allowed to build an amount out of nothing.
+  /// The two files allowed to build an amount out of nothing, and why each is.
   ///
   /// Keypad entry is inherently "these digits, as paise", so [CashTender] constructs
-  /// through `Money.fromPaise` with integer arithmetic. That is exactly the
-  /// construction being insisted on everywhere else, which is why it is the exemption
-  /// and why it is a single named file rather than a rule of thumb.
-  const String cashEntry =
-      'lib/features/billing/domain/models/cash_tender.dart';
+  /// through `Money.fromPaise` with integer arithmetic. A typed discount is the same
+  /// problem — characters the operator entered, which have to become an exact figure — so
+  /// `BillDiscount` parses in the same way, splitting on the decimal point and combining two
+  /// integers rather than going anywhere near `double.parse`.
+  ///
+  /// That is exactly the construction being insisted on everywhere else, which is why these
+  /// are the exemptions, and why they are two named files rather than a rule of thumb. The
+  /// rule is not "some files may construct amounts"; it is "the two places that turn operator
+  /// input into an amount do it with integer arithmetic, and nothing else constructs one at
+  /// all".
+  const List<String> operatorEntry = <String>[
+    'lib/features/billing/domain/models/cash_tender.dart',
+    'lib/features/billing/domain/models/bill_discount.dart',
+  ];
+
+  /// The one file that parses an integer which is not an amount.
+  ///
+  /// A GST rate is basis points — 18% is `1800` — and it is read back out of the settings
+  /// table, which stores text. So `GstRate` parses an integer, and the blanket ban on
+  /// `int.parse` across the payment path would otherwise catch it.
+  ///
+  /// It is exempted from that one pattern and from nothing else. It still may not name
+  /// `Money`, a paise field or a `double`, which is asserted separately and is the check that
+  /// matters: a rate that cannot hold an amount cannot become one by accident. The same
+  /// distinction the settings module already draws between a count and an amount.
+  const String rateEntry = 'lib/features/billing/domain/models/gst_rate.dart';
 
   /// Floating point, in any of the ways it could appear.
   const Map<String, String> floatingPoint = <String, String>{
@@ -97,14 +121,22 @@ void main() {
       }
     });
 
-    test('only cash entry constructs an amount', () {
+    test('only operator entry constructs an amount', () {
       for (final String path in paymentPath) {
-        if (path == cashEntry) {
+        if (operatorEntry.contains(path)) {
           continue;
         }
+
+        // The rate file parses an integer that is not an amount. Every other way of
+        // conjuring one still applies to it.
+        final Map<String, String> patterns = path == rateEntry
+            ? (Map<String, String>.of(amountConstruction)
+                ..remove('an integer parse'))
+            : amountConstruction;
+
         expectAbsent(
           path,
-          amountConstruction,
+          patterns,
           because:
               'Prices come from the menu and totals come from Money '
               'arithmetic; nothing here invents one.',
@@ -112,14 +144,101 @@ void main() {
       }
     });
 
+    test('the only integer parsed on the payment path is a rate', () {
+      // The exemption above is narrow, and this is what holds it narrow: no other file on
+      // the path parses an integer at all, so the exemption cannot quietly become a habit.
+      for (final String path in paymentPath) {
+        if (path == rateEntry || operatorEntry.contains(path)) {
+          continue;
+        }
+        expectAbsent(
+          path,
+          const <String, String>{'an integer parse': r'int\.(try)?[pP]arse'},
+          because:
+              'Characters become numbers in the two entry files and in '
+              'GstRate, and nowhere else on this path.',
+        );
+      }
+    });
+
     test('cash entry builds paise by integer arithmetic', () {
-      final String code = _codeOf(cashEntry);
+      final String code = _codeOf(
+        'lib/features/billing/domain/models/cash_tender.dart',
+      );
 
       // The exemption is narrow: integer paise construction, and nothing else.
       expect(code, contains('Money.fromPaise'));
       expect(code, contains('paise * 10 + digit'));
       expect(code, isNot(matches(RegExp(r'\bdouble\b'))));
       expect(code, isNot(matches(RegExp(r'Money\.parse'))));
+    });
+
+    test('discount entry builds hundredths by integer arithmetic', () {
+      final String code = _codeOf(
+        'lib/features/billing/domain/models/bill_discount.dart',
+      );
+
+      // The same narrow exemption. A decimal the operator typed is split on the point and
+      // recombined as `whole * 100 + hundredths`, which is exact; `double.parse('12.5') * 100`
+      // is not, and the rate that came out would be one nobody entered.
+      expect(code, contains('Money.fromPaise'));
+      expect(code, contains('whole * 100 + hundredths'));
+      expect(code, contains('int.parse'));
+      expect(code, isNot(matches(RegExp(r'\bdouble\b'))));
+      expect(code, isNot(matches(RegExp(r'toDouble\s*\('))));
+      expect(code, isNot(matches(RegExp(r'Money\.parse'))));
+    });
+
+    test('the tax rate is an integer and holds no amount', () {
+      final String code = _codeOf(
+        'lib/features/billing/domain/models/gst_rate.dart',
+      );
+
+      // A rate is basis points, so 18% is 1800. It is not money and never becomes money:
+      // applying it is `Money.applyRate`, which lives on Money.
+      expect(code, contains('basisPoints'));
+      expect(code, isNot(matches(RegExp(r'\bMoney\b'))));
+      expect(code, isNot(matches(RegExp(r'Paise\b'))));
+      expect(code, isNot(matches(RegExp(r'\bdouble\b'))));
+    });
+
+    test('a rate is applied in one place, and it rounds once', () {
+      // The only multiplication of an amount by a rate in the application. Both the discount
+      // and the GST go through it, so there is one rounding rule rather than two that could
+      // disagree.
+      final String money = _codeOf('lib/core/money/money.dart');
+      expect(money, contains('Money applyRate(int basisPoints)'));
+      expect(money, contains('_divideRoundingHalfAway'));
+
+      final String totals = _codeOf(
+        'lib/features/billing/domain/models/bill_totals.dart',
+      );
+      final String discount = _codeOf(
+        'lib/features/billing/domain/models/bill_discount.dart',
+      );
+
+      // Tax on the taxable amount, and a percentage discount on the subtotal. Neither
+      // divides, multiplies or rounds on its own.
+      expect(totals, contains('taxable.applyRate(taxRate.basisPoints)'));
+      expect(discount, contains('subtotal.applyRate('));
+      for (final String code in <String>[totals, discount]) {
+        expect(code, isNot(matches(RegExp(r'\bround\b|\bceil\b|\bfloor\b'))));
+        expect(code, isNot(matches(RegExp(r'\bdouble\b'))));
+      }
+    });
+
+    test('the two halves of the tax are allocated, not recalculated', () {
+      // CGST and SGST are shares of one figure. Applying half the rate twice would round
+      // twice, and the halves could then fail to add up to the tax charged.
+      final String totals = _codeOf(
+        'lib/features/billing/domain/models/bill_totals.dart',
+      );
+
+      expect(totals, contains('tax.allocate(2)'));
+
+      final String money = _codeOf('lib/core/money/money.dart');
+      expect(money, contains('List<Money> allocate(int parts)'));
+      expect(money, contains('paise.remainder(parts)'));
     });
   });
 

@@ -1,8 +1,8 @@
 import '../../../../core/money/money.dart';
+import '../../../billing/domain/models/gst_rate.dart';
 import '../../../orders/domain/models/order_type.dart';
 import '../../../payments/domain/models/payment_method.dart';
 import 'business_identity.dart';
-import 'upi_payment_request.dart';
 
 /// Something that can be printed.
 ///
@@ -62,7 +62,6 @@ final class CustomerReceipt extends PrintDocument {
     required this.totals,
     required this.paymentMethod,
     this.customerPhone,
-    this.upiPayment,
     this.notes,
     this.isReprint = false,
   });
@@ -88,9 +87,6 @@ final class CustomerReceipt extends PrintDocument {
   /// Customer's number, when one was taken. Absent for a walk-in.
   final String? customerPhone;
 
-  /// Data for the payment QR, or `null` when no UPI address is configured.
-  final UpiPaymentRequest? upiPayment;
-
   /// Order-level note, printed under the lines.
   final String? notes;
 
@@ -105,8 +101,6 @@ final class CustomerReceipt extends PrintDocument {
 
   bool get hasCustomerPhone =>
       customerPhone != null && customerPhone!.trim().isNotEmpty;
-
-  bool get hasUpiPayment => upiPayment != null;
 
   bool get hasNotes => notes != null && notes!.trim().isNotEmpty;
 
@@ -179,16 +173,38 @@ class CustomerReceiptLineOption {
 
 /// The money block at the foot of a receipt.
 ///
-/// [discount] and [tax] are printed even when they are zero. Nothing in this build
-/// produces either, and a receipt that quietly omitted the lines would leave the
-/// customer unable to see that they were not charged tax. When a rate is configured the
-/// same block carries the real figures with no layout change.
+/// ## Every figure is carried, none is calculated
+///
+/// [subtotal], [discount], [tax] and [total] are the four amounts committed to the orders
+/// table when the bill was settled, copied across unchanged. [taxRate] is the rate that
+/// produced [tax], also as stored. Nothing here recomputes an amount from another one, so
+/// a reprint next year cannot disagree with the paper the customer was given — not even by
+/// a paisa, and not even if the outlet has changed slab since.
+///
+/// ## Which lines appear
+///
+/// Only the ones that describe a charge. A bill with no discount prints no discount line,
+/// and a bill from an outlet charging no GST prints no tax lines: a row of zeroes invites
+/// the customer to wonder what it is for, and a taxable-amount line that merely repeats the
+/// subtotal above it says nothing.
+///
+/// The subtotal and the total are always printed, because those two are the bill.
+///
+/// ## CGST and SGST
+///
+/// [cgst] and [sgst] are halves of [tax], split by `Money.allocate` so they add back to it
+/// exactly. They are a presentation of one authoritative figure, not two figures of their
+/// own: applying half the rate twice would round twice, and a bill whose two tax lines do
+/// not sum to the tax it charged is not defensible. There is no IGST, because the outlet is
+/// one restaurant serving customers in its own state.
 class CustomerReceiptTotals {
   const CustomerReceiptTotals({
     required this.subtotal,
     required this.discount,
     required this.tax,
     required this.total,
+    this.taxRate = GstRate.zero,
+    this.discountLabel,
   });
 
   final Money subtotal;
@@ -200,9 +216,38 @@ class CustomerReceiptTotals {
   /// Amount collected. Persisted as calculated at settlement time.
   final Money total;
 
+  /// The rate [tax] was charged at, as recorded against this bill.
+  ///
+  /// Used only to label the tax lines. The amounts are stored figures and do not depend on
+  /// it, so a bill whose rate was never recorded still prints its tax correctly — it just
+  /// prints `GST` rather than `GST 18%`.
+  final GstRate taxRate;
+
+  /// How the discount was expressed, for example `10%` or `₹100.00`, or `null` when the
+  /// rule was not recorded.
+  ///
+  /// A label beside a stored amount, never a calculation. A bill settled before the rule
+  /// was persisted prints `Discount` with its amount and no explanation, which is what is
+  /// known about it.
+  final String? discountLabel;
+
   bool get hasDiscount => !discount.isZero;
 
   bool get hasTax => !tax.isZero;
+
+  /// What the tax was charged on: [subtotal] less [discount].
+  Money get taxableAmount => subtotal - discount;
+
+  /// True when the taxable amount is worth a line of its own.
+  ///
+  /// Only when a discount moved it away from the subtotal and there is tax to explain.
+  bool get showsTaxableAmount => hasDiscount && hasTax;
+
+  /// The central half of the GST. [cgst] plus [sgst] is exactly [tax].
+  Money get cgst => tax.allocate(2).first;
+
+  /// The state half of the GST.
+  Money get sgst => tax.allocate(2).last;
 
   /// True when subtotal minus discount plus tax is exactly the total.
   ///

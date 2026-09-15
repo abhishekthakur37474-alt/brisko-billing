@@ -8,9 +8,11 @@ import '../../../../core/money/money.dart';
 import '../../../../core/utils/result.dart';
 import '../../../orders/domain/models/order.dart';
 import '../../../orders/domain/models/order_status.dart';
+import '../../../orders/domain/models/order_type.dart';
 import '../../../payments/domain/models/payment_method.dart';
 import '../../../payments/domain/models/payment_status.dart';
 import '../../../payments/domain/models/refund_policy.dart';
+import '../../domain/models/bill_search_query.dart';
 import '../../domain/models/date_range.dart';
 import '../../domain/models/item_sales_row.dart';
 import '../../domain/models/payment_mix.dart';
@@ -300,6 +302,11 @@ class SqliteSalesReportRepository implements SalesReportRepository {
           o.discountAmountPaise AS discountAmountPaise,
           o.taxAmountPaise AS taxAmountPaise,
           o.totalAmountPaise AS totalAmountPaise,
+          -- The rate and the rule each bill was settled with, so a listed bill can state
+          -- what it charged without the list reading today's configuration.
+          o.taxRateBasisPoints AS taxRateBasisPoints,
+          o.discountType AS discountType,
+          o.discountValue AS discountValue,
           o.notes AS notes,
           c.phone AS customerPhone,
           c.name AS customerName,
@@ -366,7 +373,151 @@ class SqliteSalesReportRepository implements SalesReportRepository {
     }, context: 'load the sales');
   }
 
+  /// The settled bills matching [query], newest first, with everything the list shows.
+  ///
+  /// The same row as [loadBills] — the stored header, the earliest settled tender, the
+  /// first slip number, the customer and anything refunded — narrowed by whichever of the
+  /// four criteria the cashier supplied. The filters are composed into one `WHERE`, so a
+  /// search is a single indexed statement rather than a scan in Dart.
+  ///
+  /// A bill number and a phone are matched anywhere within the stored value, so a partial
+  /// entry still finds the bill. A phone search joins through the customer, which means a
+  /// walk-in bill — one with no customer — is not a match, exactly as it should not be.
+  @override
+  Future<Result<List<SalesBill>>> searchBills(
+    BillSearchQuery query, {
+    int limit = 100,
+  }) {
+    return SqliteErrorMapper.guard<List<SalesBill>>(() async {
+      // Bound in the order the statement reads them: the two subquery statuses first,
+      // because the subqueries open the SELECT, then the WHERE filters, then the limit.
+      final List<Object?> args = <Object?>[_settledPayment, _settledRefund];
+
+      // Always a settled bill, exactly as every other read here. This is what keeps a
+      // cancelled or unsettled record out of the history.
+      final List<String> clauses = <String>['o.${SyncColumns.isDeleted} = 0'];
+      clauses.add('o.status = ?');
+      args.add(_settledOrder);
+
+      final DateRange? range = query.range;
+      if (range != null) {
+        clauses.add('o.${SyncColumns.createdAt} >= ?');
+        args.add(range.from.millisecondsSinceEpoch);
+        clauses.add('o.${SyncColumns.createdAt} < ?');
+        args.add(range.to.millisecondsSinceEpoch);
+      }
+
+      final String? orderNumberTerm = query.orderNumberTerm;
+      if (orderNumberTerm != null) {
+        // Matched anywhere within the number, so '0007' finds '20260913-0007'.
+        clauses.add('o.orderNumber LIKE ? ESCAPE $_likeEscapeLiteral');
+        args.add(_containsPattern(orderNumberTerm));
+      }
+
+      final OrderType? orderType = query.orderType;
+      if (orderType != null) {
+        clauses.add('o.orderType = ?');
+        args.add(orderType.name);
+      }
+
+      final String? phoneTerm = query.customerPhoneTerm;
+      if (phoneTerm != null) {
+        // A filter on the joined customer's number. Because it is in the WHERE rather than
+        // the join, it turns the LEFT JOIN into an inner match, which is what excludes a
+        // walk-in bill from a phone search.
+        clauses.add('c.phone LIKE ? ESCAPE $_likeEscapeLiteral');
+        args.add(_containsPattern(phoneTerm));
+      }
+
+      args.add(limit);
+
+      final List<Map<String, Object?>> rows = await _db.rawQuery('''
+        SELECT
+          o.${SyncColumns.id} AS ${SyncColumns.id},
+          o.${SyncColumns.createdAt} AS ${SyncColumns.createdAt},
+          o.${SyncColumns.updatedAt} AS ${SyncColumns.updatedAt},
+          o.${SyncColumns.isDeleted} AS ${SyncColumns.isDeleted},
+          o.${SyncColumns.syncState} AS ${SyncColumns.syncState},
+          o.orderNumber AS orderNumber,
+          o.orderType AS orderType,
+          o.status AS status,
+          o.customerId AS customerId,
+          o.subtotalPaise AS subtotalPaise,
+          o.discountAmountPaise AS discountAmountPaise,
+          o.taxAmountPaise AS taxAmountPaise,
+          o.totalAmountPaise AS totalAmountPaise,
+          o.taxRateBasisPoints AS taxRateBasisPoints,
+          o.discountType AS discountType,
+          o.discountValue AS discountValue,
+          o.notes AS notes,
+          c.phone AS customerPhone,
+          c.name AS customerName,
+          (
+            SELECT p.paymentMethod
+            FROM ${SqliteTables.payments} p
+            WHERE p.orderId = o.${SyncColumns.id}
+              AND p.${SyncColumns.isDeleted} = 0
+              AND p.status = ?
+            ORDER BY p.${SyncColumns.createdAt} ASC, p.rowid ASC
+            LIMIT 1
+          ) AS paymentMethod,
+          (
+            SELECT k.kotNumber
+            FROM ${SqliteTables.kotRecords} k
+            WHERE k.orderId = o.${SyncColumns.id}
+              AND k.${SyncColumns.isDeleted} = 0
+            ORDER BY k.${SyncColumns.createdAt} ASC, k.rowid ASC
+            LIMIT 1
+          ) AS kotNumber,
+          (
+            SELECT COALESCE(SUM(r.amountPaise), 0)
+            FROM ${SqliteTables.refunds} r
+            WHERE r.orderId = o.${SyncColumns.id}
+              AND r.${SyncColumns.isDeleted} = 0
+              AND r.status = ?
+          ) AS refundedPaise
+        FROM ${SqliteTables.orders} o
+        LEFT JOIN ${SqliteTables.customers} c
+          ON c.${SyncColumns.id} = o.customerId
+          AND c.${SyncColumns.isDeleted} = 0
+        WHERE ${clauses.join(' AND ')}
+        ORDER BY o.${SyncColumns.createdAt} DESC, o.orderNumber DESC
+        LIMIT ?
+        ''', args);
+
+      return rows
+          .map(
+            (Map<String, Object?> row) => SalesBill(
+              order: Order.fromRow(row),
+              paymentMethod: _methodOrNull(row),
+              kotNumber: row.optionalString('kotNumber'),
+              customerPhone: row.optionalString('customerPhone'),
+              customerName: row.optionalString('customerName'),
+              refundedAmount: Money.fromPaise(row.optionalInt('refundedPaise')),
+            ),
+          )
+          .toList(growable: false);
+    }, context: 'search the bills');
+  }
+
   // --------------------------------------------------------------- internals ---
+
+  /// A `LIKE` pattern matching [term] anywhere, with its own wildcards escaped.
+  ///
+  /// The user's text is data, not pattern: a bill number is unlikely to contain `%` or `_`,
+  /// but escaping them means a stray one narrows the search rather than widening it to
+  /// everything.
+  static String _containsPattern(String term) {
+    final String escaped = term
+        .replaceAll(_likeEscape, '$_likeEscape$_likeEscape')
+        .replaceAll('%', '$_likeEscape%')
+        .replaceAll('_', '${_likeEscape}_');
+    return '%$escaped%';
+  }
+
+  /// The character that escapes a `LIKE` wildcard, and its single-quoted SQL literal.
+  static const String _likeEscape = r'\';
+  static const String _likeEscapeLiteral = "'\\'";
 
   /// Names the settled bills in [range] as `settled`, for the statement that follows.
   ///
@@ -395,6 +546,9 @@ class SqliteSalesReportRepository implements SalesReportRepository {
             discountAmountPaise,
             taxAmountPaise,
             totalAmountPaise,
+            taxRateBasisPoints,
+            discountType,
+            discountValue,
             notes
           FROM ${SqliteTables.orders}
           WHERE ${SyncColumns.isDeleted} = 0

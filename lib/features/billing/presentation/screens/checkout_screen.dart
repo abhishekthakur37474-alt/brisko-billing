@@ -8,6 +8,7 @@ import '../../../inventory/domain/repositories/inventory_deduction_repository.da
 import '../../../printing/domain/services/print_service.dart';
 import '../../../settings/domain/active_pos_settings.dart';
 import '../../../settings/domain/models/pos_settings.dart';
+import '../../domain/models/gst_rate.dart';
 import '../../domain/repositories/checkout_repository.dart';
 import '../controllers/billing_controller.dart';
 import '../controllers/checkout_controller.dart';
@@ -55,6 +56,17 @@ class CheckoutScreen extends StatelessWidget {
           initialOrderType:
               context.read<ActivePosSettings?>()?.settings.defaultOrderType ??
               PosSettings.fallbackOrderType,
+          // The rate in force, read from the same in-memory copy for the same reason: a
+          // widget cannot await a query while it builds. Read once, here, so the rate
+          // cannot move under a bill that is part-way through settlement, and stamped onto
+          // the order when it commits.
+          //
+          // Nullable on purpose. A test that pumps this screen on its own gets
+          // `GstRate.zero`, which is also what an outlet that has configured no rate gets:
+          // no tax line, exactly as before this step.
+          taxRate:
+              context.read<ActivePosSettings?>()?.settings.gstRate ??
+              GstRate.zero,
         );
       },
       child: const _CheckoutView(),

@@ -1,5 +1,7 @@
 import '../../../core/error/app_failure.dart';
 import '../../../core/utils/result.dart';
+import '../../billing/domain/models/bill_discount.dart';
+import '../../billing/domain/models/gst_rate.dart';
 import '../../customers/domain/models/customer.dart';
 import '../../customers/domain/repositories/customer_repository.dart';
 import '../../kot/domain/models/kitchen_ticket.dart';
@@ -15,7 +17,6 @@ import '../../payments/domain/repositories/payment_repository.dart';
 import '../domain/models/business_identity.dart';
 import '../domain/models/print_document.dart';
 import '../domain/models/sale_print_documents.dart';
-import '../domain/models/upi_payment_request.dart';
 import '../domain/services/sale_print_document_source.dart';
 import 'settings_business_identity_source.dart';
 
@@ -132,11 +133,20 @@ class RepositorySalePrintDocumentSource implements SalePrintDocumentSource {
       );
     }
 
+    // Every figure from the committed order, including the rate it was charged at and the
+    // discount rule it was given. Nothing is read from Settings: a bill reprinted after the
+    // outlet changes slab must still say what it charged, and the only way to guarantee that
+    // is never to ask the current configuration.
     final CustomerReceiptTotals totals = CustomerReceiptTotals(
       subtotal: order.subtotal,
       discount: order.discountAmount,
       tax: order.taxAmount,
       total: order.totalAmount,
+      taxRate: GstRate.fromStoredBasisPoints(order.taxRateBasisPoints),
+      discountLabel: BillDiscount.fromStored(
+        storedType: order.discountType,
+        storedValue: order.discountValue,
+      )?.label,
     );
 
     // Exact paise on both sides, so this is a real check and not a tolerance.
@@ -192,12 +202,6 @@ class RepositorySalePrintDocumentSource implements SalePrintDocumentSource {
         // arrives this is the line that changes.
         paymentMethod: settled.first.paymentMethod,
         customerPhone: await _customerPhone(order.customerId),
-        upiPayment: UpiPaymentRequest.forOrder(
-          vpa: await identity.upiVpa(),
-          payeeName: await identity.upiPayeeName() ?? business.name,
-          amount: order.totalAmount,
-          orderNumber: order.orderNumber,
-        ),
         notes: order.notes,
         isReprint: isReprint,
       ),

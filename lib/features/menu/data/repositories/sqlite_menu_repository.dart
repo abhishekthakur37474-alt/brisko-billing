@@ -68,6 +68,20 @@ class SqliteMenuRepository implements MenuRepository {
   Stream<List<MenuCategory>> watchCategories() => _categories.watchAll();
 
   @override
+  Future<Result<List<MenuCategory>>> loadCategoriesForManagement() {
+    return SqliteErrorMapper.guard<List<MenuCategory>>(() async {
+      // No isActive filter: maintenance has to see a switched-off category to switch
+      // it back on. isDeleted = 0 stays, because a removed row is meant to be gone.
+      final List<Map<String, Object?>> rows = await _db.query(
+        SqliteTables.categories,
+        where: 'isDeleted = 0',
+        orderBy: 'displayOrder ASC, name ASC',
+      );
+      return rows.map(MenuCategory.fromRow).toList(growable: false);
+    }, context: 'load the categories for management');
+  }
+
+  @override
   Future<Result<List<MenuItem>>> loadItems({String? categoryId}) {
     return SqliteErrorMapper.guard<List<MenuItem>>(() async {
       final List<Map<String, Object?>> rows = await _db.query(
@@ -80,6 +94,23 @@ class SqliteMenuRepository implements MenuRepository {
       );
       return rows.map(MenuItem.fromRow).toList(growable: false);
     }, context: 'load the menu items');
+  }
+
+  @override
+  Future<Result<List<MenuItem>>> loadItemsForManagement({String? categoryId}) {
+    return SqliteErrorMapper.guard<List<MenuItem>>(() async {
+      // Deactivated and unavailable items are both returned: the screen shows every
+      // state so any of them can be changed. Only a removal hides a row.
+      final List<Map<String, Object?>> rows = await _db.query(
+        SqliteTables.menuItems,
+        where: categoryId == null
+            ? 'isDeleted = 0'
+            : 'isDeleted = 0 AND categoryId = ?',
+        whereArgs: categoryId == null ? null : <Object?>[categoryId],
+        orderBy: 'displayOrder ASC, name ASC',
+      );
+      return rows.map(MenuItem.fromRow).toList(growable: false);
+    }, context: 'load the menu items for management');
   }
 
   @override
@@ -96,6 +127,21 @@ class SqliteMenuRepository implements MenuRepository {
       );
       return rows.map(MenuItemVariant.fromRow).toList(growable: false);
     }, context: 'load the item sizes');
+  }
+
+  @override
+  Future<Result<List<MenuItemVariant>>> loadVariantsForManagement(
+    String menuItemId,
+  ) {
+    return SqliteErrorMapper.guard<List<MenuItemVariant>>(() async {
+      final List<Map<String, Object?>> rows = await _db.query(
+        SqliteTables.menuItemVariants,
+        where: 'isDeleted = 0 AND menuItemId = ?',
+        whereArgs: <Object?>[menuItemId],
+        orderBy: 'displayOrder ASC',
+      );
+      return rows.map(MenuItemVariant.fromRow).toList(growable: false);
+    }, context: 'load the item sizes for management');
   }
 
   @override
@@ -222,6 +268,21 @@ class SqliteMenuRepository implements MenuRepository {
       );
       return rows.map(MenuItemOption.fromRow).toList(growable: false);
     }, context: 'load the menu options');
+  }
+
+  @override
+  Future<Result<List<MenuItemOption>>> loadOptionsForManagement() {
+    return SqliteErrorMapper.guard<List<MenuItemOption>>(() async {
+      // No isActive filter, and no scope resolution: management edits the rows as they
+      // are stored, one per scope, so a deactivated option can be turned back on and a
+      // size-specific price is shown as itself rather than collapsed into another.
+      final List<Map<String, Object?>> rows = await _db.query(
+        SqliteTables.menuItemOptions,
+        where: 'isDeleted = 0',
+        orderBy: 'optionType ASC, displayOrder ASC, name ASC',
+      );
+      return rows.map(MenuItemOption.fromRow).toList(growable: false);
+    }, context: 'load the menu options for management');
   }
 
   @override

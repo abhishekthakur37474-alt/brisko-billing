@@ -1,3 +1,5 @@
+import 'monochrome_bitmap.dart';
+
 /// The outlet's own details, as they appear at the top of a receipt.
 ///
 /// ## Nothing here is invented
@@ -20,6 +22,8 @@ class BusinessIdentity {
     this.gstin,
     this.receiptHeader,
     this.receiptFooter,
+    this.feedbackUrl,
+    this.logo,
   });
 
   /// The outlet this build was written for.
@@ -48,6 +52,22 @@ class BusinessIdentity {
   /// Closing line, for example a thank-you or a return policy.
   final String? receiptFooter;
 
+  /// URL the feedback QR points at, so a customer can leave a review. Omitted when
+  /// unset: a QR pointing nowhere is worse than an absent one.
+  final String? feedbackUrl;
+
+  /// The outlet's logo, already reduced to printable dots, or `null` when there is
+  /// none to print.
+  ///
+  /// Optional the same way every other identity field is: an outlet that has not
+  /// supplied a logo prints a header with just its name, rather than a placeholder
+  /// image. The reduction from a source image to one bit per dot happens above the
+  /// printing layer, where an image codec is available; this field is the finished
+  /// result.
+  final MonochromeBitmap? logo;
+
+  bool get hasLogo => logo != null && !logo!.isEmpty;
+
   bool get hasAddress => _isPresent(address);
 
   bool get hasPhone => _isPresent(phone);
@@ -57,6 +77,8 @@ class BusinessIdentity {
   bool get hasReceiptHeader => _isPresent(receiptHeader);
 
   bool get hasReceiptFooter => _isPresent(receiptFooter);
+
+  bool get hasFeedbackUrl => _isPresent(feedbackUrl);
 
   /// True when the operator has supplied everything a tax invoice needs.
   ///

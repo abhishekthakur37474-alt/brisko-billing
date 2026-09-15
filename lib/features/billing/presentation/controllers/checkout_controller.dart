@@ -15,10 +15,12 @@ import '../../../orders/domain/models/order_type.dart';
 import '../../../payments/domain/models/payment_method.dart';
 import '../../../printing/domain/models/sale_print_run.dart';
 import '../../../printing/domain/services/print_service.dart';
+import '../../domain/models/bill_discount.dart';
 import '../../domain/models/bill_settlement.dart';
 import '../../domain/models/bill_totals.dart';
 import '../../domain/models/cart.dart';
 import '../../domain/models/cash_tender.dart';
+import '../../domain/models/gst_rate.dart';
 import '../../domain/repositories/checkout_repository.dart';
 
 /// Where the cashier is in the settlement flow.
@@ -65,6 +67,20 @@ enum CheckoutStep {
 /// failure carries the same order, line and payment ids. Even if the guard were
 /// defeated, the second write would land on the same rows rather than create a second
 /// bill.
+///
+/// ## The discount and the GST rate
+///
+/// The discount is entered here, on the review step, because it is a decision about this
+/// bill taken at the moment of settling it. The GST rate is not entered at all: it is
+/// handed in from the outlet's configuration when this controller is built, held for the
+/// life of the flow, and copied onto the order. A rate change part-way through a bill
+/// cannot move the figure the cashier is looking at.
+///
+/// Every figure comes from [totals], which is a [BillTotals] rebuilt through the one
+/// authoritative calculation each time the discount moves. The cash keypad's target and
+/// the amount on the Charge button read the same value, and [submit] rebuilds it once more
+/// from the same cart and the same two inputs, so the row written cannot differ from the
+/// amount shown.
 class CheckoutController extends ChangeNotifier {
   CheckoutController({
     required Cart cart,
@@ -74,10 +90,14 @@ class CheckoutController extends ChangeNotifier {
     required this._printService,
     required this._onSettled,
     OrderType initialOrderType = OrderType.takeaway,
+    GstRate taxRate = GstRate.zero,
   }) : _cart = cart,
        _orderType = initialOrderType,
-       _totals = BillTotals.fromCart(cart),
-       _cashTender = CashTender(payable: BillTotals.fromCart(cart).total);
+       _taxRate = taxRate,
+       _totals = BillTotals.forCart(cart: cart, taxRate: taxRate),
+       _cashTender = CashTender(
+         payable: BillTotals.forCart(cart: cart, taxRate: taxRate).total,
+       );
 
   /// Digits in the stored form of a phone number.
   ///
@@ -91,7 +111,40 @@ class CheckoutController extends ChangeNotifier {
   final InventoryDeductionRepository _inventoryDeductionRepository;
   final PrintService _printService;
   final VoidCallback _onSettled;
-  final BillTotals _totals;
+
+  /// The rate this bill is charged at, fixed when the flow opened.
+  ///
+  /// Not settable. A cashier does not choose a tax rate at the counter; the outlet
+  /// configures one in Settings and every bill taken afterwards carries it.
+  final GstRate _taxRate;
+
+  /// The current money block. Replaced whole whenever the discount moves.
+  BillTotals _totals;
+
+  /// The discount rule in force, as parsed from what has been typed.
+  ///
+  /// [BillDiscount.none] until something is entered, and back to none when the field is
+  /// cleared. A value that cannot be read leaves this at its last good state and reports
+  /// itself through [discountProblem], so a half-typed figure never silently changes the
+  /// amount charged.
+  BillDiscount _discount = BillDiscount.none;
+
+  /// Which rule the operator is entering. Percentage by default, which is the common case.
+  BillDiscountType _discountType = BillDiscountType.percentage;
+
+  /// What has been typed, exactly as typed.
+  ///
+  /// Held as text rather than as a number so that `12.` mid-entry is a state the field can
+  /// be in without the bill total flickering, and so a value that is not a discount is
+  /// reported beside the field instead of being rounded into one.
+  String _discountEntry = '';
+
+  /// True once the operator has opened the discount control.
+  ///
+  /// Distinct from "a discount of zero": the control is closed on a bill nobody is
+  /// discounting, so the review step is not carrying a field that almost always stays
+  /// empty.
+  bool _isDiscountOpen = false;
 
   CheckoutStep _step = CheckoutStep.review;
 
@@ -137,10 +190,69 @@ class CheckoutController extends ChangeNotifier {
   /// The bill being settled. Immutable for the lifetime of this controller.
   Cart get cart => _cart;
 
+  /// The money block for this bill: subtotal, discount, taxable amount, GST and total.
+  ///
+  /// The single source of every figure the flow shows, and the same value [submit] writes.
   BillTotals get totals => _totals;
 
   /// Amount to collect.
   Money get amountPayable => _totals.total;
+
+  // ---------------------------------------------------------------- discount ---
+
+  /// The GST rate this bill is being charged at.
+  GstRate get taxRate => _taxRate;
+
+  /// True when the outlet has configured a rate, so the bill carries a tax line.
+  bool get isTaxCharged => _taxRate.isCharged;
+
+  /// True when the discount control is open on the review step.
+  bool get isDiscountOpen => _isDiscountOpen;
+
+  /// Which rule the operator is entering.
+  BillDiscountType get discountType => _discountType;
+
+  /// What has been typed into the discount field, exactly as typed.
+  String get discountEntry => _discountEntry;
+
+  /// The rule in force. [BillDiscount.none] when nothing is being taken off.
+  BillDiscount get discount => _discount;
+
+  /// `10%` or `₹100.00`, describing the rule currently applied.
+  String get discountRuleLabel => _discount.label;
+
+  /// True when a discount is actually reducing this bill.
+  bool get hasDiscount => _totals.hasDiscount;
+
+  /// What is wrong with the discount entered, or `null` when there is nothing to say.
+  ///
+  /// Silent on an empty field, because an empty discount field is the normal state of a
+  /// bill rather than a mistake. Reports a value that cannot be read as a number, and a
+  /// value that is a number but not a discount this bill can carry — over 100%, or more
+  /// than the subtotal.
+  String? get discountProblem {
+    if (!_isDiscountOpen || _discountEntry.trim().isEmpty) {
+      return null;
+    }
+
+    final BillDiscount? parsed = BillDiscount.tryParse(
+      type: _discountType,
+      value: _discountEntry,
+    );
+    if (parsed == null) {
+      return switch (_discountType) {
+        BillDiscountType.percentage =>
+          'Enter a percentage between 0 and 100, for example 10 or 12.5.',
+        BillDiscountType.amount =>
+          'Enter an amount in rupees, for example 100 or 99.50.',
+      };
+    }
+
+    return parsed.problemOn(_totals.subtotal);
+  }
+
+  /// True when the discount, if any, is one this bill may be settled with.
+  bool get isDiscountAcceptable => discountProblem == null;
 
   OrderType get orderType => _orderType;
 
@@ -194,6 +306,13 @@ class CheckoutController extends ChangeNotifier {
 
   /// True when the bill is settled but a document did not reach the printer.
   bool get hasPrintFailure => _printRun?.hasFailure ?? false;
+
+  /// True when there is a settled bill whose paperwork can be sent again.
+  ///
+  /// Offered from the moment the bill is on disk, whether the first attempt printed or
+  /// not. Reprinting reads the committed sale and writes nothing, so there is no state in
+  /// which it is unsafe — only one in which there is no order to read.
+  bool get canReprint => _settledOrder != null && !_isPrinting;
 
   /// True when every document printed.
   bool get isPrinted => _printRun?.isComplete ?? false;
@@ -265,7 +384,12 @@ class CheckoutController extends ChangeNotifier {
   }
 
   /// True when the review step is complete enough to take payment.
-  bool get canProceedToPayment => hasBill && isCustomerAcceptable;
+  ///
+  /// A discount that cannot be read blocks the step rather than being ignored. Carrying on
+  /// with the last good total while a refused figure sits on screen is how a customer gets
+  /// charged an amount nobody agreed to.
+  bool get canProceedToPayment =>
+      hasBill && isCustomerAcceptable && isDiscountAcceptable;
 
   /// True when the cash counted covers the bill, or the method is not cash.
   bool get isTenderSufficient {
@@ -307,6 +431,75 @@ class CheckoutController extends ChangeNotifier {
     _orderType = type;
     _invalidateSettlement();
     notifyListeners();
+  }
+
+  /// Opens the discount control, or closes it and removes any discount.
+  ///
+  /// Closing removes rather than hides. A discount left applied behind a collapsed control
+  /// would be a reduction on the bill with nothing on screen explaining it, which is the
+  /// one thing a discount must never be.
+  void setDiscountOpen({required bool isOpen}) {
+    if (_isDiscountOpen == isOpen || isSettled) {
+      return;
+    }
+    _isDiscountOpen = isOpen;
+    if (!isOpen) {
+      _discountEntry = '';
+      _applyDiscount(BillDiscount.none);
+      return;
+    }
+    notifyListeners();
+  }
+
+  /// Switches between a percentage and a flat amount.
+  ///
+  /// The entry is cleared, because `10` means ten percent under one rule and ten rupees
+  /// under the other. Carrying the digits across would silently change what the customer
+  /// is given.
+  void selectDiscountType(BillDiscountType type) {
+    if (_discountType == type || isSettled) {
+      return;
+    }
+    _discountType = type;
+    _discountEntry = '';
+    _applyDiscount(BillDiscount.none);
+  }
+
+  /// Records what has been typed into the discount field, and recalculates the bill.
+  ///
+  /// A value that cannot be read leaves the applied discount where it was and surfaces
+  /// through [discountProblem]; the step will not advance until it is corrected. A value
+  /// that reads but is refused for this bill — over 100%, or more than the subtotal — is
+  /// likewise not applied. Clearing the field removes the discount.
+  void editDiscount(String value) {
+    if (_discountEntry == value || isSettled) {
+      return;
+    }
+    _discountEntry = value;
+
+    final BillDiscount? parsed = BillDiscount.tryParse(
+      type: _discountType,
+      value: value,
+    );
+
+    if (parsed == null || parsed.problemOn(_totals.subtotal) != null) {
+      // Not applied. The figure on the button stays the last one that was valid, and the
+      // step is blocked, so nothing can be charged against a discount that was refused.
+      _invalidateSettlement();
+      notifyListeners();
+      return;
+    }
+
+    _applyDiscount(parsed);
+  }
+
+  /// Removes the discount and empties the field, leaving the control open.
+  void clearDiscount() {
+    if (isSettled) {
+      return;
+    }
+    _discountEntry = '';
+    _applyDiscount(BillDiscount.none);
   }
 
   /// Records the customer's phone number, keeping only the digits.
@@ -447,6 +640,11 @@ class CheckoutController extends ChangeNotifier {
       cart: _cart,
       orderType: _orderType,
       paymentMethod: _paymentMethod!,
+      // The two inputs to the money block, handed on so the settlement recomputes exactly
+      // the figures on screen rather than being told the answer. The rate is the one this
+      // flow opened with, which is what gets stamped onto the bill.
+      discount: _discount,
+      taxRate: _taxRate,
       // The number, not a customer id. The repository resolves it inside the settlement
       // transaction, so a failed sale cannot leave a customer behind and a retry cannot
       // create a second one.
@@ -454,6 +652,22 @@ class CheckoutController extends ChangeNotifier {
       reference: _referenceOrNull,
       notes: _notesOrNull,
     );
+
+    // The settlement rebuilt the money block from the same cart and the same two inputs, so
+    // it must have arrived at the same figures. Checked rather than assumed, because this is
+    // the last point before the amount becomes the customer's receipt: if the two ever
+    // disagreed, the cashier would have confirmed one number and the till would hold
+    // another. Refused rather than reconciled — there is no correct way to pick a winner.
+    if (settlement.totals != _totals) {
+      _settlement = null;
+      _errorMessage =
+          'This bill was not settled: the amount recalculated at settlement '
+          'does not match the ${_totals.total.toDecimalString()} confirmed. '
+          'Check the bill and try again.';
+      _isSubmitting = false;
+      _notify();
+      return;
+    }
 
     final Result<Order> result = await _checkoutRepository.settle(settlement);
 
@@ -510,6 +724,27 @@ class CheckoutController extends ChangeNotifier {
     _isPrinting = false;
     _notify();
   }
+
+  /// Prints the customer's receipt again.
+  ///
+  /// For the copy that jammed, tore, or that the customer asked for after the first one
+  /// went in the bin. Distinct from [retryPrinting], which re-sends only what failed:
+  /// this sends the receipt whatever happened to it, and only the receipt, because
+  /// re-cutting a kitchen slip for food that is already being cooked puts a second order
+  /// into the pass.
+  ///
+  /// Rebuilt from the committed order, so it cannot disagree with the bill, and it writes
+  /// nothing: no second order, no second payment, no second kitchen slip, no stock
+  /// movement.
+  Future<void> reprintReceipt() =>
+      _reprint(() => _printService.reprintReceipt(_settledOrder!.id));
+
+  /// Prints the order's kitchen slips again, and nothing else.
+  ///
+  /// For a slip lost between the counter and the pass. It raises no new ticket and does
+  /// not disturb where the existing ones stand in pending → preparing → ready.
+  Future<void> reprintKitchenSlips() =>
+      _reprint(() => _printService.reprintKitchenSlips(_settledOrder!.id));
 
   /// Dismisses the printing notice, leaving the settled bill on screen.
   ///
@@ -600,6 +835,27 @@ class CheckoutController extends ChangeNotifier {
     _notify();
   }
 
+  /// Sends paperwork for the settled bill again, and reports the outcome in [printRun].
+  ///
+  /// Shares [_isPrinting] and [_printRun] with the first attempt on purpose: there is one
+  /// printer and one thing on screen saying how it is getting on, and a second set of
+  /// fields would let the two disagree.
+  ///
+  /// Never touches [_errorMessage], [_settledOrder] or [_step], for the same reason
+  /// [_print] does not. Nothing below can make a settled bill look unsettled.
+  Future<void> _reprint(Future<SalePrintRun> Function() send) async {
+    if (_settledOrder == null || _isPrinting) {
+      return;
+    }
+
+    _isPrinting = true;
+    _notify();
+
+    _printRun = await send();
+    _isPrinting = false;
+    _notify();
+  }
+
   /// Takes the bill's ingredients off the shelf.
   ///
   /// Never touches [_errorMessage], [_settledOrder] or [_step], for the same reason
@@ -658,6 +914,27 @@ class CheckoutController extends ChangeNotifier {
       return;
     }
     _cashTender = updated;
+    notifyListeners();
+  }
+
+  /// Applies [discount] and rebuilds everything downstream of the total.
+  ///
+  /// One place, so the three things that have to move together always do: the money block,
+  /// the target the cash keypad is counting towards, and the cached settlement. A discount
+  /// applied without resetting the tender would leave ₹1,000 on screen as sufficient for a
+  /// bill that is now ₹1,062, and the cashier would be told the customer had paid enough.
+  ///
+  /// The tender is cleared rather than carried over, for the same reason a payment method
+  /// change clears it: cash the customer has not put down must not be shown as counted.
+  void _applyDiscount(BillDiscount discount) {
+    _discount = discount;
+    _totals = BillTotals.forCart(
+      cart: _cart,
+      discount: discount,
+      taxRate: _taxRate,
+    );
+    _cashTender = CashTender(payable: _totals.total);
+    _invalidateSettlement();
     notifyListeners();
   }
 

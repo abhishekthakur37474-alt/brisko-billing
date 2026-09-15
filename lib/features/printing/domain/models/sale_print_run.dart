@@ -34,6 +34,13 @@ class SalePrintRun {
 
   final List<PrintJob> jobs;
 
+  /// True when there was nothing to print.
+  ///
+  /// Not a failure. It is what a kitchen-slip reprint of an order that never raised a
+  /// slip reports, and the difference matters: "there is no slip for this bill" and "the
+  /// slip would not print" call for different things from whoever asked.
+  bool get isEmpty => jobs.isEmpty;
+
   /// True when every document reached the printer.
   bool get isComplete =>
       jobs.isNotEmpty && jobs.every((PrintJob job) => job.isPrinted);

@@ -13,8 +13,12 @@ import '../../../payments/domain/models/refund_request.dart';
 import '../../../payments/domain/models/refundable_bill.dart';
 import '../../../payments/domain/repositories/payment_repository.dart';
 import '../../../payments/domain/repositories/refund_repository.dart';
+import '../../../printing/domain/models/sale_print_run.dart';
+import '../../../printing/domain/services/print_service.dart';
 import '../../domain/models/bill_line_snapshot.dart';
 import '../../domain/models/order.dart';
+import '../../domain/models/order_cancellation.dart';
+import '../../domain/models/order_status.dart';
 import '../../domain/repositories/order_repository.dart';
 
 /// Holds one stored bill, exactly as it was written.
@@ -60,6 +64,7 @@ class BillDetailController extends ChangeNotifier {
     required PaymentRepository paymentRepository,
     required CustomerRepository customerRepository,
     required RefundRepository refundRepository,
+    required this._printService,
   }) : _orders = orderRepository,
        _payments = paymentRepository,
        _customers = customerRepository,
@@ -70,6 +75,12 @@ class BillDetailController extends ChangeNotifier {
   final PaymentRepository _payments;
   final CustomerRepository _customers;
   final RefundRepository _refunds;
+
+  /// Sends the bill or the kitchen slip to paper again.
+  ///
+  /// The second thing on this controller that does something rather than reading, and
+  /// unlike [refund] it changes nothing at all. See the reprint section below.
+  final PrintService _printService;
 
   Order? _order;
   List<BillLineSnapshot> _lines = const <BillLineSnapshot>[];
@@ -85,6 +96,14 @@ class BillDetailController extends ChangeNotifier {
   bool _isRefunding = false;
   String? _refundError;
   Refund? _justRefunded;
+
+  bool _isReprinting = false;
+  String? _reprintMessage;
+  bool _didReprint = false;
+
+  bool _isCancelling = false;
+  String? _cancelError;
+  bool _didCancel = false;
 
   /// The request currently being attempted, held so a retry is a retry.
   ///
@@ -168,6 +187,72 @@ class BillDetailController extends ChangeNotifier {
   /// Drawn from the read model, so the wording a disabled action explains itself with is the
   /// same wording the repository would refuse with.
   String? get refundRefusal => hasRefunded ? null : _refundable?.refusalReason;
+
+  // -------------------------------------------------------------- reprint state ---
+
+  /// True while a document is being sent.
+  bool get isReprinting => _isReprinting;
+
+  /// What the last reprint did, or `null` when none has been attempted.
+  ///
+  /// Kept apart from both [errorMessage] and [refundError]. A printer that would not take
+  /// the paper says nothing about the bill or about the money, so it must not blank out the
+  /// document or sit where a refund refusal sits.
+  String? get reprintMessage => _reprintMessage;
+
+  /// True when the last reprint reached the printer.
+  bool get didReprint => _didReprint;
+
+  /// True when there is a settled bill worth reprinting.
+  ///
+  /// A bill that has not loaded has nothing to print from. Cancelled and refunded bills are
+  /// deliberately still reprintable: a customer asking for the paperwork on a reversed sale
+  /// is entitled to it, and the document says what it says.
+  bool get canReprint => _order != null && !_isReprinting;
+
+  // -------------------------------------------------------------- cancel state ---
+
+  /// True while a cancellation is being written.
+  bool get isCancelling => _isCancelling;
+
+  /// Why the last cancellation did not happen, or `null`.
+  ///
+  /// Kept apart from [errorMessage] and the refund and reprint notices, for the same reason
+  /// they are kept apart from each other: a refused cancellation is a fact about one action,
+  /// not about the bill, and must not blank the document out.
+  String? get cancelError => _cancelError;
+
+  bool get hasCancelError => _cancelError != null;
+
+  /// True when a cancellation made on this screen has succeeded.
+  bool get didCancel => _didCancel;
+
+  /// True when this bill can be cancelled from here right now.
+  ///
+  /// Only a live bill: one that has not been settled and has not already been cancelled.
+  /// A completed sale is not cancelled — it is refunded, which is a separate action with a
+  /// separate button — so offering cancel on it would invite undoing a paid bill without
+  /// giving the money back. The domain rule `OrderCancellation.canCancel` still guards the
+  /// write; this getter is the narrower question of whether to show the action at all.
+  bool get canCancel =>
+      _order != null &&
+      !_isCancelling &&
+      !_didCancel &&
+      _order!.status != OrderStatus.completed &&
+      OrderCancellation.canCancel(_order!.status);
+
+  /// Why cancelling is not offered, or `null` when it is.
+  ///
+  /// Only spelled out for a bill that has already been cancelled, which is the one case a
+  /// reader might expect the action and needs told about. A completed bill silently offers
+  /// a refund instead.
+  String? get cancelRefusal {
+    final Order? order = _order;
+    if (order == null || _didCancel) {
+      return null;
+    }
+    return OrderCancellation.refusalReason(order.status);
+  }
 
   // ----------------------------------------------------------------- derived ---
 
@@ -372,7 +457,148 @@ class BillDetailController extends ChangeNotifier {
     _notify();
   }
 
+  // ---------------------------------------------------------------- reprinting ---
+  //
+  // Printing is the one action on this screen that cannot go wrong in a way that matters.
+  // Nothing below writes: not an order, not a payment, not a kitchen ticket, not a stock
+  // movement and not a report row. The documents are rebuilt by the print service from the
+  // same committed rows this screen is showing, so a reprint pressed a dozen times
+  // produces a dozen pieces of paper and exactly one sale — which is why there is no
+  // duplicate check here. There is no code that could duplicate.
+  //
+  // It also does not depend on the original cart. That was cleared the moment the bill
+  // settled, possibly months ago on a terminal that has been restarted since.
+
+  /// Sends the customer's receipt to the printer again.
+  ///
+  /// Returns true when it reached the printer. On failure the bill on screen is untouched
+  /// and [reprintMessage] says what the printer reported, because a printer that is
+  /// unplugged is not a reason to stop showing somebody their bill.
+  Future<bool> reprintReceipt() =>
+      _reprint(() => _printService.reprintReceipt(_orderId), what: 'Receipt');
+
+  /// Sends the order's kitchen slips to the printer again.
+  ///
+  /// For a slip lost between the counter and the pass. It raises no new ticket and does not
+  /// disturb where the existing ones stand in pending → preparing → ready: the kitchen
+  /// board is driven by the ticket rows, and this reads them.
+  ///
+  /// An order with no kitchen tickets reports that there is nothing to print rather than a
+  /// failure. That is a different thing to tell somebody, and it is the honest answer for a
+  /// bill whose slips were never raised.
+  Future<bool> reprintKitchenSlips() => _reprint(
+    () => _printService.reprintKitchenSlips(_orderId),
+    what: 'Kitchen slip',
+    nothingToPrint: 'There is no kitchen slip stored against this bill.',
+  );
+
+  /// Clears the reprint notice.
+  void dismissReprintMessage() {
+    if (_reprintMessage == null) {
+      return;
+    }
+    _reprintMessage = null;
+    _didReprint = false;
+    _notify();
+  }
+
+  // -------------------------------------------------------------- cancelling ---
+
+  /// Cancels a live bill and reloads it so the screen shows the new status.
+  ///
+  /// The business rules are not duplicated here: this calls [OrderRepository.cancelOrder],
+  /// which re-reads the status inside its own transaction, refuses a bill that is missing or
+  /// already cancelled, and stops any outstanding kitchen work. Stock is not returned and
+  /// the tender is left as it was — the repository owns every one of those decisions.
+  ///
+  /// Returns true when the bill was cancelled. On failure the bill on screen is untouched
+  /// and [cancelError] carries the reason. On success the whole bill is re-read, so the
+  /// status, the lines and the now-closed refund state all come from the committed rows.
+  ///
+  /// Ignores a call made while one is already running, so a double tap cannot fire two.
+  Future<bool> cancel() async {
+    final Order? order = _order;
+    if (_isCancelling || order == null) {
+      return false;
+    }
+
+    _isCancelling = true;
+    _cancelError = null;
+    _notify();
+
+    final Result<Order> outcome = await _orders.cancelOrder(order.id);
+    final AppFailure? failure = outcome.failureOrNull;
+    if (failure != null) {
+      _isCancelling = false;
+      _cancelError = failure.message;
+      _notify();
+      return false;
+    }
+
+    _didCancel = true;
+    _isCancelling = false;
+    // Re-read from storage rather than adjusted in memory, so the status and every figure
+    // beside it are what is on disk.
+    await load();
+    _notify();
+    return true;
+  }
+
+  /// Clears the cancellation failure notice, leaving the bill alone.
+  void dismissCancelError() {
+    if (_cancelError == null) {
+      return;
+    }
+    _cancelError = null;
+    _notify();
+  }
+
   // --------------------------------------------------------------- internals ---
+
+  /// Runs one reprint and turns the run into a sentence.
+  ///
+  /// Ignores a call made while one is in flight, so a double tap cannot put two copies of
+  /// the same document on the queue. Beyond that there is nothing to guard: the run reads
+  /// committed rows and writes none, so the worst a stray tap costs is paper.
+  Future<bool> _reprint(
+    Future<SalePrintRun> Function() send, {
+    required String what,
+    String? nothingToPrint,
+  }) async {
+    if (_isReprinting || _order == null) {
+      return false;
+    }
+
+    _isReprinting = true;
+    _reprintMessage = null;
+    _didReprint = false;
+    _notify();
+
+    final SalePrintRun run = await send();
+    _isReprinting = false;
+
+    if (run.isEmpty) {
+      _reprintMessage =
+          nothingToPrint ?? 'There was nothing to print for this bill.';
+      _notify();
+      return false;
+    }
+
+    if (run.hasFailure) {
+      // The printer's own words, prefixed with which document did not come out. The bill
+      // itself is untouched and stays on screen behind this.
+      _reprintMessage =
+          '$what could not be printed. '
+          '${run.failureReason ?? 'The printer did not respond.'}';
+      _notify();
+      return false;
+    }
+
+    _didReprint = true;
+    _reprintMessage = '$what sent to the printer.';
+    _notify();
+    return true;
+  }
 
   /// Re-reads the refund figures after a successful reversal.
   ///

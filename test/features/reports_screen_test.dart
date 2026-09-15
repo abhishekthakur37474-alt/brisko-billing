@@ -9,6 +9,7 @@ import 'package:brisko_billing/features/orders/domain/models/order_status.dart';
 import 'package:brisko_billing/features/orders/domain/models/order_type.dart';
 import 'package:brisko_billing/features/orders/presentation/widgets/bill_detail_view.dart';
 import 'package:brisko_billing/features/payments/domain/models/payment_method.dart';
+import 'package:brisko_billing/features/reports/domain/models/bill_search_query.dart';
 import 'package:brisko_billing/features/reports/domain/models/date_range.dart';
 import 'package:brisko_billing/features/reports/domain/models/item_sales_row.dart';
 import 'package:brisko_billing/features/reports/domain/models/payment_mix.dart';
@@ -456,6 +457,17 @@ class _FailingReportRepository implements SalesReportRepository {
   Future<Result<List<SalesBill>>> loadBills(
     DateRange range, {
     int limit = 200,
+  }) async {
+    if (isBroken) {
+      return const Err<List<SalesBill>>(_failure);
+    }
+    return const Ok<List<SalesBill>>(<SalesBill>[]);
+  }
+
+  @override
+  Future<Result<List<SalesBill>>> searchBills(
+    BillSearchQuery query, {
+    int limit = 100,
   }) async {
     if (isBroken) {
       return const Err<List<SalesBill>>(_failure);

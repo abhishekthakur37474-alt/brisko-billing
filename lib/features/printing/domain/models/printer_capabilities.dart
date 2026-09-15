@@ -17,12 +17,43 @@ class PrinterCapabilities {
     this.isColour = false,
   });
 
-  /// The selected hardware: 80mm, ESC/POS, auto cutter, native QR, monochrome.
+  /// The selected hardware: 80mm, ESC/POS, auto cutter, native QR, raster graphics,
+  /// monochrome.
+  ///
+  /// Graphics are enabled because the outlet's printer renders the QR family of
+  /// commands correctly on the physical roll, and the raster bit image (`GS v 0`) is
+  /// the same standard graphics mode every printer in this class carries. It drives the
+  /// outlet logo at the top of a receipt; a device that turns out not to support it
+  /// simply prints a header with no logo.
   static const PrinterCapabilities escPos80mm = PrinterCapabilities(
     paperWidth: PaperWidth.mm80,
     hasAutoCutter: true,
     supportsQrCode: true,
+    supportsGraphics: true,
   );
+
+  /// A 58mm ESC/POS printer, otherwise identical.
+  ///
+  /// Declared because [PaperWidth.mm58] is, and because a configured roll width has to
+  /// resolve to capabilities without a conditional at every call site. Nothing in this
+  /// build targets it.
+  static const PrinterCapabilities escPos58mm = PrinterCapabilities(
+    paperWidth: PaperWidth.mm58,
+    hasAutoCutter: true,
+    supportsQrCode: true,
+    supportsGraphics: true,
+  );
+
+  /// The ordinary ESC/POS printer that takes a [paper] roll.
+  ///
+  /// The cutter and the QR engine are assumed present, because every printer in this
+  /// class has both. A device that turns out not to is corrected in the layout settings,
+  /// where `PrintSettings.problems` already refuses a cut on a bladeless printer rather
+  /// than sending a command it will ignore.
+  static PrinterCapabilities escPosFor(PaperWidth paper) => switch (paper) {
+    PaperWidth.mm58 => escPos58mm,
+    PaperWidth.mm80 => escPos80mm,
+  };
 
   final PaperWidth paperWidth;
 

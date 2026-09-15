@@ -70,10 +70,11 @@ void main() {
     addTearDown(database.close);
 
     expect(await database.database.getVersion(), SqliteDatabase.schemaVersion);
-    // Held bills (v7) and refunds (v8) landed after this upgrade path, so the current
-    // version has moved past 6. Opening a v5 database still carries it all the way to the
-    // latest.
-    expect(SqliteDatabase.schemaVersion, 8);
+    // Held bills (v7), refunds (v8), the bill's own GST rate and discount rule (v9) and
+    // the cloud sync bookmarks (v10) all landed after this upgrade path, so the current
+    // version has moved well past 6. Opening a v5 database still carries it all the way to
+    // the latest.
+    expect(SqliteDatabase.schemaVersion, 10);
   });
 
   test('the recipe and deduction tables are added', () async {

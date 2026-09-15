@@ -136,22 +136,59 @@ void main() {
     ) async {
       await openSettings(tester);
 
-      // No transport exists, so nothing on the screen invites one to be configured.
+      // Printing is off on an unconfigured terminal, and the transport fields appear only
+      // once it is turned on. Nothing invites an address to be typed into a terminal that
+      // has not said it wants to print.
       expect(find.textContaining('IP address'), findsNothing);
       expect(find.textContaining('Bluetooth'), findsNothing);
       expect(find.textContaining('USB'), findsNothing);
       expect(find.textContaining('Port'), findsNothing);
     });
 
-    testWidgets('it offers no loyalty wallet and no tax rate', (
+    testWidgets('it offers no loyalty wallet and no default discount', (
       WidgetTester tester,
     ) async {
       await openSettings(tester);
 
       expect(find.textContaining('Loyalty'), findsNothing);
       expect(find.textContaining('Wallet'), findsNothing);
-      expect(find.textContaining('Tax rate'), findsNothing);
-      expect(find.textContaining('Discount'), findsNothing);
+      // A discount is a decision about one bill, taken at the counter on the review step.
+      // There is no configured default, because a standing reduction is not something
+      // anybody agreed to on any particular sale.
+      expect(find.textContaining('Discount rate'), findsNothing);
+      expect(find.textContaining('Default discount'), findsNothing);
+    });
+
+    testWidgets('it offers a GST rate, and nothing is chosen for the outlet', (
+      WidgetTester tester,
+    ) async {
+      // This used to assert that no tax rate was offered at all, which was correct while no
+      // bill could carry tax. Step 14 gives the outlet a rate to configure, so the rule is
+      // now about what that control may and may not do: it offers the standard combined
+      // slabs, it starts at none, and it picks no slab on the outlet's behalf.
+      await openSettings(tester);
+
+      expect(find.text('GST rate'), findsOneWidget);
+      for (final String slab in <String>['0%', '5%', '12%', '18%']) {
+        expect(
+          find.widgetWithText(ChoiceChip, slab),
+          findsOneWidget,
+          reason: 'the $slab slab should be offered',
+        );
+      }
+
+      final ChoiceChip none = tester.widget<ChoiceChip>(
+        find.widgetWithText(ChoiceChip, '0%'),
+      );
+      expect(none.selected, isTrue);
+      expect(
+        find.textContaining('No GST is charged'),
+        findsOneWidget,
+        reason: 'the screen should say what a zero rate means for a bill',
+      );
+      // And it says the change cannot reach a bill already given out, which is the fact an
+      // owner needs before touching a slab.
+      expect(find.textContaining('already issued'), findsOneWidget);
     });
   });
 
@@ -175,6 +212,22 @@ void main() {
       );
       expect(values[SettingKeys.businessPhone], '020 2545 1234');
       expect(values[SettingKeys.gstin], '27AAPFU0939F1ZV');
+    });
+
+    testWidgets('the feedback / review URL is written to the table', (
+      WidgetTester tester,
+    ) async {
+      await openSettings(tester);
+
+      await enter(
+        tester,
+        'Feedback / Review URL',
+        'https://g.page/r/brisko/review',
+      );
+      await save(tester);
+
+      final Map<String, String?> values = await stored(tester);
+      expect(values[SettingKeys.feedbackUrl], 'https://g.page/r/brisko/review');
     });
 
     testWidgets('a confirmation is shown, and only after the write', (
@@ -234,6 +287,50 @@ void main() {
         find.widgetWithText(ChoiceChip, OrderType.delivery.label),
       );
       expect(chip.selected, isTrue);
+    });
+
+    testWidgets('a chosen GST rate is written and shown again', (
+      WidgetTester tester,
+    ) async {
+      final AppDependencies deps = await openSettings(tester);
+
+      await tap(tester, find.widgetWithText(ChoiceChip, '18%'));
+      await save(tester);
+
+      // Stored as basis points, because that is what the arithmetic multiplies by. 18% is
+      // 1800, not 18 and not 0.18.
+      expect((await stored(tester))[SettingKeys.gstRateBasisPoints], '1800');
+
+      // And the copy the next bill reads is updated, but only now the write has committed.
+      expect(deps.activeSettings.settings.gstRate.basisPoints, 1800);
+      expect(deps.activeSettings.settings.chargesGst, isTrue);
+
+      await tap(tester, find.text(PosSection.reports.label).last);
+      await tap(tester, find.text(PosSection.settings.label).last);
+
+      final ChoiceChip chip = tester.widget<ChoiceChip>(
+        find.widgetWithText(ChoiceChip, '18%'),
+      );
+      expect(chip.selected, isTrue);
+      // The help text now describes a taxed bill rather than an untaxed one.
+      expect(find.textContaining('CGST and SGST'), findsOneWidget);
+    });
+
+    testWidgets('a rate can be taken back off', (WidgetTester tester) async {
+      // An outlet that stops charging GST has to be able to say so, and a bill taken
+      // afterwards must carry no tax line.
+      final AppDependencies deps = await openSettings(tester);
+
+      await tap(tester, find.widgetWithText(ChoiceChip, '12%'));
+      await save(tester);
+      expect(deps.activeSettings.settings.gstRate.basisPoints, 1200);
+
+      await tap(tester, find.widgetWithText(ChoiceChip, '0%'));
+      await save(tester);
+
+      expect((await stored(tester))[SettingKeys.gstRateBasisPoints], '0');
+      expect(deps.activeSettings.settings.gstRate.isZero, isTrue);
+      expect(deps.activeSettings.settings.chargesGst, isFalse);
     });
 
     testWidgets('discarding restores what is stored', (

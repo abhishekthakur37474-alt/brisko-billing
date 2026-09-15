@@ -27,6 +27,7 @@ import 'package:brisko_billing/features/payments/data/repositories/sqlite_refund
 import 'package:brisko_billing/features/payments/domain/models/payment.dart';
 import 'package:brisko_billing/features/payments/domain/models/payment_method.dart';
 import 'package:brisko_billing/features/payments/domain/models/payment_status.dart';
+import 'package:brisko_billing/features/printing/data/printers/unconfigured_thermal_printer.dart';
 import 'package:brisko_billing/features/reports/data/repositories/sqlite_sales_report_repository.dart';
 import 'package:brisko_billing/features/reports/domain/models/date_range.dart';
 import 'package:brisko_billing/features/reports/domain/models/payment_mix.dart';
@@ -36,6 +37,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/fixtures.dart';
 import '../helpers/seeded_sales.dart';
 import '../helpers/test_database.dart';
+import '../helpers/test_printing.dart';
 
 /// Cancelling a bill that has already been written.
 ///
@@ -239,6 +241,10 @@ void main() {
         paymentRepository: payments,
         customerRepository: customers,
         refundRepository: SqliteRefundRepository(database: database),
+        printService: TestPrinting.serviceOver(
+          database,
+          printer: UnconfiguredThermalPrinter(),
+        ),
       );
       addTearDown(controller.dispose);
       await controller.load();

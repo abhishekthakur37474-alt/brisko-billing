@@ -219,6 +219,70 @@ class EscPosCommands {
   /// The largest payload the store command can carry, from the 16-bit length.
   static const int qrMaxDataLength = 0xFFFF - 3;
 
+  // ---------------------------------------------------------------- bit image ---
+  //
+  // `GS v 0` prints a raster bit image: one bit per dot, most-significant bit first,
+  // a dot printed where the bit is set. The width is given in BYTES (each byte is
+  // eight horizontal dots) and the height in DOTS, each as a little-endian 16-bit
+  // pair. This is the command every ESC/POS printer with a graphics mode implements,
+  // and it is how a logo reaches the top of a receipt. The image data follows the
+  // header immediately.
+
+  /// `GS v 0 m xL xH yL yH` — the header of a raster bit image.
+  ///
+  /// [widthBytes] is the row width in bytes and [heightDots] the number of rows. Mode
+  /// 0 is normal density. The packed image bytes are sent straight after this header,
+  /// and there must be exactly `widthBytes * heightDots` of them: getting that count
+  /// wrong is the raster equivalent of the QR length bug, where the printer reads too
+  /// few or too many bytes and interprets the rest of the document as commands.
+  static List<int> rasterBitImage({
+    required int widthBytes,
+    required int heightDots,
+  }) => <int>[
+    gs,
+    0x76,
+    0x30,
+    0x00,
+    widthBytes & 0xFF,
+    (widthBytes >> 8) & 0xFF,
+    heightDots & 0xFF,
+    (heightDots >> 8) & 0xFF,
+  ];
+
+  /// The largest raster dimension the `GS v 0` 16-bit width/height fields can carry.
+  static const int rasterMaxDimension = 0xFFFF;
+
+  /// The most image data, in bytes, to put in a single `GS v 0` command.
+  ///
+  /// The header can describe an image of any height the 16-bit field allows, but the
+  /// printer still has to buffer the data that follows it, and its input buffer is
+  /// finite — a few kilobytes on a compact 80mm printer. A logo sent as one command
+  /// whose payload is larger than that buffer overruns it: the printer loses the frame
+  /// mid-raster, drops back to text mode and prints the remaining image bytes as a
+  /// block of garbage characters, which is precisely the failure a whole-logo `GS v 0`
+  /// produces on this class of hardware. The image is therefore sent as a run of
+  /// bands, each a complete `GS v 0` command whose data stays under this budget, so no
+  /// single transfer can exceed the buffer. Raster mode advances the paper by exactly
+  /// the dots printed, so consecutive bands stack with no seam.
+  ///
+  /// The value is deliberately conservative — well under the ~4KB buffer these
+  /// printers typically carry, with room left for the header and anything already
+  /// queued — because the cost of a smaller band is only a few more short commands,
+  /// while the cost of an over-large one is an unreadable receipt.
+  static const int rasterMaxBandBytes = 1024;
+
+  /// Rows of a [widthBytes]-wide image that fit in one band under [rasterMaxBandBytes].
+  ///
+  /// Always at least one row, so even an image wider than the whole budget is sent a
+  /// row at a time rather than not at all.
+  static int rasterRowsPerBand(int widthBytes) {
+    if (widthBytes <= 0) {
+      return 1;
+    }
+    final int rows = rasterMaxBandBytes ~/ widthBytes;
+    return rows < 1 ? 1 : rows;
+  }
+
   /// Clamps to a single byte, so a bad argument produces a valid command rather than
   /// a stream the printer would misparse.
   static int _byte(int value) => value < 0 ? 0 : (value > 255 ? 255 : value);

@@ -1,6 +1,15 @@
 import 'package:brisko_billing/app/bootstrap.dart';
+import 'package:brisko_billing/app/sync/sync_endpoints.dart';
+import 'package:brisko_billing/core/data/connectivity/network_probe.dart';
+import 'package:brisko_billing/core/data/connectivity/polling_connectivity_monitor.dart';
 import 'package:brisko_billing/core/data/local/sqlite/sqlite_database.dart';
 import 'package:brisko_billing/core/data/local/sqlite/sqlite_outbox_store.dart';
+import 'package:brisko_billing/core/data/local/sqlite/sqlite_sync_metadata_store.dart';
+import 'package:brisko_billing/core/data/remote/remote_store_factory.dart';
+import 'package:brisko_billing/core/data/sync/default_sync_coordinator.dart';
+import 'package:brisko_billing/core/data/sync/sync_endpoint.dart';
+import 'package:brisko_billing/features/auth/data/auth_session_store.dart';
+import 'package:brisko_billing/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:brisko_billing/features/billing/data/repositories/sqlite_checkout_repository.dart';
 import 'package:brisko_billing/features/billing/data/repositories/sqlite_held_bill_repository.dart';
 import 'package:brisko_billing/features/billing/domain/repositories/held_bill_repository.dart';
@@ -15,8 +24,10 @@ import 'package:brisko_billing/features/payments/data/repositories/sqlite_paymen
 import 'package:brisko_billing/features/payments/data/repositories/sqlite_refund_repository.dart';
 import 'package:brisko_billing/features/payments/domain/repositories/refund_repository.dart';
 import 'package:brisko_billing/features/printing/data/escpos/configurable_escpos_encoder.dart';
-import 'package:brisko_billing/features/printing/data/printers/unconfigured_thermal_printer.dart';
+import 'package:brisko_billing/features/printing/data/printers/configurable_thermal_printer.dart';
+import 'package:brisko_billing/features/printing/data/printers/no_transport_printer_factory.dart';
 import 'package:brisko_billing/features/printing/domain/models/print_settings.dart';
+import 'package:brisko_billing/features/printing/domain/models/printer_connection_settings.dart';
 import 'package:brisko_billing/features/printing/domain/printers/thermal_printer.dart';
 import 'package:brisko_billing/features/reports/data/repositories/sqlite_sales_report_repository.dart';
 import 'package:brisko_billing/features/reports/domain/repositories/sales_report_repository.dart';
@@ -25,6 +36,7 @@ import 'package:brisko_billing/features/settings/domain/active_pos_settings.dart
 import 'package:brisko_billing/features/settings/domain/models/pos_settings.dart';
 import 'package:brisko_billing/features/settings/domain/repositories/settings_repository.dart';
 
+import 'fixed_printer_factory.dart';
 import 'test_printing.dart';
 
 /// The production dependency graph over an already-open test database.
@@ -56,8 +68,21 @@ class TestDependencies {
     RefundRepository? refundRepository,
     PosSettings activeSettings = PosSettings.unconfigured,
     PrintSettings? printSettings,
+    PrinterConnectionSettings printerSettings =
+        PrinterConnectionSettings.unconfigured,
+    AuthController? authController,
+    bool isCloudConfigured = false,
   }) {
-    final ThermalPrinter resolved = printer ?? UnconfiguredThermalPrinter();
+    // The printer the application holds, wired exactly as the bootstrap wires it: a
+    // configurable printer over a transport factory, so a test can save a printer binding
+    // on the Settings screen and have it take effect. [printer] substitutes the transport
+    // the factory hands back, which is the one thing no test can have for real.
+    final ConfigurableThermalPrinter resolved = ConfigurableThermalPrinter(
+      factory: printer == null
+          ? const NoTransportPrinterFactory()
+          : FixedPrinterFactory(printer),
+      settings: printerSettings,
+    );
 
     // One encoder, shared between the print service and the profile the application
     // exposes, exactly as the bootstrap wires it. That is what makes a printer setting
@@ -65,9 +90,51 @@ class TestDependencies {
     final ConfigurableEscPosEncoder encoder =
         ConfigurableEscPosEncoder.forPrinter(resolved, settings: printSettings);
 
+    // The sync engine, wired exactly as the bootstrap wires it but never started
+    // and pointed at the no-op cloud, so widget tests get a real coordinator to
+    // read a status from without any timer, network probe or backend.
+    final SqliteOutboxStore outbox = SqliteOutboxStore(database: database);
+    final SqliteSyncMetadataStore syncMetadata = SqliteSyncMetadataStore(
+      database: database,
+    );
+    const NoopRemoteStoreFactory remoteFactory = NoopRemoteStoreFactory();
+    final PollingConnectivityMonitor connectivity = PollingConnectivityMonitor(
+      probe: const HostLookupProbe(),
+    );
+    final List<SyncEndpointBase> endpoints = buildSyncEndpoints(
+      database,
+      remoteFactory,
+    );
+    final DefaultSyncCoordinator syncCoordinator = DefaultSyncCoordinator(
+      endpoints: endpoints,
+      outbox: outbox,
+      metadata: syncMetadata,
+      connectivity: connectivity,
+    );
+
+    // The whole application over a test database is a local-only, cloud-disabled build:
+    // no Firebase project, so the auth gate is bypassed and the till opens straight away,
+    // exactly as a plain `flutter run` or a fresh install does. Tests that need the cloud
+    // or the login flow wire those pieces themselves.
+    final SettingsRepository resolvedSettings =
+        settingsRepository ?? SqliteSettingsRepository(database: database);
+    final AuthController resolvedAuth =
+        authController ??
+        AuthController(
+          isCloudEnabled: false,
+          initiallyAuthenticated: false,
+          sessionStore: AuthSessionStore(settings: resolvedSettings),
+        );
+
     return AppDependencies(
       database: database,
-      outbox: SqliteOutboxStore(database: database),
+      outbox: outbox,
+      syncCoordinator: syncCoordinator,
+      connectivityMonitor: connectivity,
+      remoteStoreFactory: remoteFactory,
+      syncMetadataStore: syncMetadata,
+      isCloudConfigured: isCloudConfigured,
+      authController: resolvedAuth,
       menuRepository: SqliteMenuRepository(database: database),
       orderRepository: SqliteOrderRepository(database: database),
       checkoutRepository: SqliteCheckoutRepository(database: database),
@@ -86,10 +153,10 @@ class TestDependencies {
       salesReportRepository:
           salesReportRepository ??
           SqliteSalesReportRepository(database: database),
-      settingsRepository:
-          settingsRepository ?? SqliteSettingsRepository(database: database),
+      settingsRepository: resolvedSettings,
       activeSettings: ActivePosSettings(settings: activeSettings),
       printer: resolved,
+      activePrinter: resolved,
       activePrintProfile: encoder,
       printService: TestPrinting.serviceOver(
         database,

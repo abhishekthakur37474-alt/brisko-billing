@@ -28,14 +28,58 @@ import '../../domain/printers/thermal_printer.dart';
 ///
 /// It is not a fake and not test data. It states a fact about this terminal.
 class UnconfiguredThermalPrinter implements ThermalPrinter {
+  /// A terminal with no printer, or with one this build cannot open.
+  ///
+  /// [reason] is what every send fails with, defaulting to [message]. Pass
+  /// [configuredEndpoint] and a [reason] from [transportMissing] for a printer that *is*
+  /// configured and still cannot be reached, which is what `NoTransportPrinterFactory`
+  /// does.
   UnconfiguredThermalPrinter({
-    this.capabilities = PrinterCapabilities.escPos80mm,
+    PrinterCapabilities capabilities = PrinterCapabilities.escPos80mm,
+    String? reason,
+    PrinterEndpoint? configuredEndpoint,
+  }) : this._(
+         capabilities: capabilities,
+         reason: reason ?? message,
+         configuredEndpoint: configuredEndpoint,
+       );
+
+  /// Every field settled, so the defaulting above happens in exactly one place.
+  UnconfiguredThermalPrinter._({
+    required this.capabilities,
+    required this._reason,
+    required this._configuredEndpoint,
   }) : profile = PrintProfile.forCapabilities(capabilities);
 
   /// What the cashier is told. Names the action that would fix it.
   static const String message =
       'No thermal printer is set up on this terminal yet. Connect the 80mm '
       'ESC/POS printer and configure it in Settings to print.';
+
+  /// What the cashier is told when the printer *is* configured and this build still
+  /// cannot open it.
+  ///
+  /// A different sentence from [message] on purpose. "Nothing is set up" would send
+  /// somebody back to a settings screen they have already filled in correctly; this names
+  /// the real gap, which is that no transport adapter has been written yet.
+  static String transportMissing({
+    required String transport,
+    required String printer,
+  }) =>
+      'The $transport printer $printer is configured, but this build has no '
+      '$transport transport, so nothing can be sent to it yet. The '
+      'configuration is stored and will be used as soon as the transport is '
+      'added.';
+
+  /// Where the operator says the printer is, when they have said.
+  ///
+  /// Reported so a status line can name the device the settings point at, even though
+  /// nothing here can open it. It does not make [connectionState] any less
+  /// [PrinterConnectionState.unavailable]: an address is not a connection.
+  final PrinterEndpoint? _configuredEndpoint;
+
+  /// The message every send fails with.
+  final String _reason;
 
   /// The capabilities of the printer the outlet intends to use.
   ///
@@ -62,9 +106,9 @@ class UnconfiguredThermalPrinter implements ThermalPrinter {
   Stream<PrinterConnectionState> get connectionStates =>
       Stream<PrinterConnectionState>.value(PrinterConnectionState.unavailable);
 
-  /// No endpoint, because nothing has been configured.
+  /// Where the settings say the printer is, or `null` when nothing has been configured.
   @override
-  PrinterEndpoint? get endpoint => null;
+  PrinterEndpoint? get endpoint => _configuredEndpoint;
 
   @override
   Future<Result<void>> connect() async => _failure();
@@ -79,5 +123,5 @@ class UnconfiguredThermalPrinter implements ThermalPrinter {
   @override
   Future<void> dispose() async {}
 
-  static Result<void> _failure() => const Err<void>(PrinterFailure(message));
+  Result<void> _failure() => Err<void>(PrinterFailure(_reason));
 }

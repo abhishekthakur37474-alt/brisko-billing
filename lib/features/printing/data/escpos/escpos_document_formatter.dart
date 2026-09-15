@@ -103,16 +103,7 @@ class EscPosDocumentFormatter implements PrintDocumentEncoder {
     }
 
     builder.separator();
-
-    // Discount and tax are printed even at zero. Nothing in this build produces
-    // either, and a receipt that omitted the lines would leave the customer unable to
-    // see that they were not charged tax.
-    builder.amountRow('Subtotal', receipt.totals.subtotal);
-    builder.amountRow('Discount', receipt.totals.discount);
-    builder.amountRow('Tax', receipt.totals.tax);
-    builder.separator(emphasis: true);
-    builder.totalRow('TOTAL $currencyCode', receipt.totals.total);
-    builder.separator(emphasis: true);
+    _totalsBlock(builder, receipt.totals);
 
     builder.row(
       'Paid by ${receipt.paymentMethod.label}',
@@ -124,12 +115,73 @@ class EscPosDocumentFormatter implements PrintDocumentEncoder {
       builder.line('Note: ${receipt.notes}');
     }
 
-    _upiBlock(builder, receipt);
+    _feedbackBlock(builder, receipt);
 
     if (receipt.business.hasReceiptFooter) {
       builder.blankLine();
       builder.centred(receipt.business.receiptFooter!);
     }
+  }
+
+  /// The money at the foot of the bill.
+  ///
+  /// ## Only the lines that describe a charge
+  ///
+  /// The subtotal and the total are always printed: those two are the bill. Everything
+  /// between them appears only when it says something.
+  ///
+  /// * No discount, no discount line. A row reading `Discount 0.00` invites the customer to
+  ///   ask what it is for, and the answer is "nothing".
+  /// * No tax, no tax lines. An outlet that charges no GST prints a bill with no tax on it,
+  ///   which is what it issued.
+  /// * The taxable amount appears only when a discount has moved it away from the subtotal
+  ///   *and* there is tax to explain. Otherwise it is either the subtotal repeated or a
+  ///   figure nothing is charged on.
+  ///
+  /// ## Why CGST and SGST rather than one GST line
+  ///
+  /// A tax invoice from a restaurant in its own state states the two halves, so the customer
+  /// can see what went to the centre and what to the state. Both are derived from the one
+  /// stored tax figure by `CustomerReceiptTotals.cgst` and `.sgst`, which allocate rather
+  /// than recalculate, so the two lines always add to the tax charged.
+  ///
+  /// No layout changes: every row goes through the same `amountRow` and the same column
+  /// budget as before, so an 80mm bill is laid out exactly as it was.
+  void _totalsBlock(EscPosBuilder builder, CustomerReceiptTotals totals) {
+    builder.amountRow('Subtotal', totals.subtotal);
+
+    if (totals.hasDiscount) {
+      final String? rule = totals.discountLabel;
+      // Named with the rule that produced it when the bill recorded one, so `10%` can be
+      // checked against the figure beside it. A bill settled before the rule was stored
+      // prints the amount alone rather than an invented explanation.
+      builder.amountRow(
+        rule == null ? 'Discount' : 'Discount ($rule)',
+        -totals.discount,
+      );
+    }
+
+    if (totals.showsTaxableAmount) {
+      builder.amountRow('Taxable amount', totals.taxableAmount);
+    }
+
+    if (totals.hasTax) {
+      // The rate is put on the line only when it is known and halves into a whole basis
+      // point, so the paper never states a percentage that does not multiply out to the
+      // amount printed beside it. A bill that charged tax but recorded no rate — one settled
+      // before the rate was stored — prints `CGST` alone rather than `CGST 0%`, which would
+      // be a claim about the bill that is not true.
+      final String? half = totals.taxRate.isCharged
+          ? totals.taxRate.halfLabel
+          : null;
+      final String suffix = half == null ? '' : ' $half';
+      builder.amountRow('CGST$suffix', totals.cgst);
+      builder.amountRow('SGST$suffix', totals.sgst);
+    }
+
+    builder.separator(emphasis: true);
+    builder.totalRow('TOTAL $currencyCode', totals.total);
+    builder.separator(emphasis: true);
   }
 
   /// The outlet's own details, centred at the top.
@@ -138,14 +190,27 @@ class EscPosDocumentFormatter implements PrintDocumentEncoder {
   /// placeholder GSTIN: an invented tax number on an invoice is worse than a missing
   /// one, so a blank setting produces a blank space.
   ///
-  /// There is no logo either. A bitmap logo needs `PrinterCapabilities.supportsGraphics`,
-  /// which is false until a real printer proves otherwise, and an invented placeholder
-  /// image on a customer's bill would be worse than none.
+  /// The outlet logo, when one is bundled and the printer has a graphics mode, is the
+  /// first thing on the paper, centred above the name. It is the outlet's own image,
+  /// reduced to printable dots above the printing layer; there is no placeholder or
+  /// generated logo, so a build without the asset simply leads with the name.
   void _businessHeader(EscPosBuilder builder, BusinessIdentity business) {
+    if (business.hasLogo && profile.canPrintGraphics) {
+      builder.image(business.logo!);
+    }
     builder.centred(business.name, bold: true, doubleHeight: true);
 
     if (business.hasAddress) {
-      builder.centred(business.address!);
+      // An outlet address is several lines — street, landmark, district. Each line the
+      // operator entered is centred in its own right, and any line still too long for the
+      // paper is word-wrapped by `centred`, so a real address never overflows the column
+      // budget and never runs two parts together.
+      for (final String line in business.address!.split('\n')) {
+        final String trimmed = line.trim();
+        if (trimmed.isNotEmpty) {
+          builder.centred(trimmed);
+        }
+      }
     }
     if (business.hasPhone) {
       builder.centred('Phone ${business.phone}');
@@ -158,21 +223,29 @@ class EscPosDocumentFormatter implements PrintDocumentEncoder {
     }
   }
 
-  /// The payment QR, when a UPI address has been configured.
+  /// The feedback QR, when a review URL has been configured.
   ///
-  /// Prints nothing at all when it has not. A QR is a promise that scanning it pays
-  /// this outlet, and there is no honest placeholder for that. Nothing is printed either
-  /// when the printer has no QR engine, because a heading with no symbol under it would
-  /// read as a fault rather than as an absence.
-  void _upiBlock(EscPosBuilder builder, CustomerReceipt receipt) {
-    if (!receipt.hasUpiPayment || !profile.canPrintQrCode) {
+  /// The bill is already paid by the time it prints, so there is no payment QR on it: a
+  /// paid receipt asking to be paid again is a mistake waiting to be made at the counter.
+  /// In its place a customer is invited to leave a review, which is the one thing still
+  /// worth asking for once the money is in the till.
+  ///
+  /// Prints nothing at all when no URL is configured. A QR is a promise that scanning it
+  /// reaches the outlet's review page, and there is no honest placeholder for that.
+  /// Nothing is printed either when the printer has no QR engine, because a heading with
+  /// no symbol under it would read as a fault rather than as an absence.
+  void _feedbackBlock(EscPosBuilder builder, CustomerReceipt receipt) {
+    if (!receipt.business.hasFeedbackUrl || !profile.canPrintQrCode) {
       return;
     }
 
     builder.blankLine();
-    builder.centred('Scan to pay by UPI');
-    builder.qrCode(receipt.upiPayment!.toUri());
-    builder.centred(receipt.upiPayment!.vpa);
+    builder.centred('RATE US', bold: true);
+    builder.centred('Scan to share your feedback');
+    builder.qrCode(receipt.business.feedbackUrl!);
+    builder.blankLine();
+    builder.centred('Thank you for visiting');
+    builder.centred(receipt.business.name);
   }
 
   // ------------------------------------------------------------------- kot ---

@@ -59,6 +59,14 @@ class DefaultPrintService implements PrintService {
   Future<SalePrintRun> reprintSale(String orderId) =>
       _run(orderId, isReprint: true);
 
+  @override
+  Future<SalePrintRun> reprintReceipt(String orderId) =>
+      _run(orderId, isReprint: true, only: PrintJobKind.customerReceipt);
+
+  @override
+  Future<SalePrintRun> reprintKitchenSlips(String orderId) =>
+      _run(orderId, isReprint: true, only: PrintJobKind.kitchenKot);
+
   /// Re-sends only the jobs that failed.
   ///
   /// The documents are rebuilt from the order rather than kept from the first attempt,
@@ -123,7 +131,17 @@ class DefaultPrintService implements PrintService {
 
   // --------------------------------------------------------------- internals ---
 
-  Future<SalePrintRun> _run(String orderId, {required bool isReprint}) async {
+  /// Builds the sale's documents and sends the ones asked for.
+  ///
+  /// [only] narrows the run to one kind of document, which is what a receipt-only or
+  /// slip-only reprint is. It narrows what is *sent*; the whole sale is still read and
+  /// still validated, so a receipt reprint of a bill whose figures no longer add up is
+  /// refused rather than printed, exactly as a first print would be.
+  Future<SalePrintRun> _run(
+    String orderId, {
+    required bool isReprint,
+    PrintJobKind? only,
+  }) async {
     final Result<SalePrintDocuments> built = await _documents.forOrder(
       orderId,
       isReprint: isReprint,
@@ -137,9 +155,10 @@ class DefaultPrintService implements PrintService {
         orderId: orderId,
         orderNumber: '',
         jobs: <PrintJob>[
-          _unbuildableJob(orderId)
-              .started()
-              .failedWith(built.failureOrNull!.message),
+          _unbuildableJob(
+            orderId,
+            only ?? PrintJobKind.customerReceipt,
+          ).started().failedWith(built.failureOrNull!.message),
         ],
       );
     }
@@ -150,6 +169,9 @@ class DefaultPrintService implements PrintService {
     // In the order they should reach the printer: the kitchen slips first, because
     // somebody is waiting on the food.
     for (final PrintDocument document in documents.all) {
+      if (only != null && PrintJobFactory.kindOf(document) != only) {
+        continue;
+      }
       jobs.add(await _send(_jobs.build(document, orderId: orderId)));
     }
 
@@ -197,10 +219,10 @@ class DefaultPrintService implements PrintService {
   /// cashier a failure to read and a retry to press, which is why it is built by hand
   /// rather than through the factory: the factory's job is to encode a document, and
   /// here there is none.
-  PrintJob _unbuildableJob(String orderId) => PrintJob(
+  PrintJob _unbuildableJob(String orderId, PrintJobKind kind) => PrintJob(
     id: EntityId.generate(prefix: 'prj'),
-    kind: PrintJobKind.customerReceipt,
-    title: 'Customer receipt',
+    kind: kind,
+    title: kind.label,
     orderId: orderId,
     createdAt: _clock(),
     bytes: Uint8List(0),

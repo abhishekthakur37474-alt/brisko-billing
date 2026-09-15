@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../auth/presentation/widgets/account_settings_section.dart';
+import '../../../billing/domain/models/gst_rate.dart';
+import '../../../cloud_sync/presentation/widgets/cloud_sync_settings_section.dart';
 import '../../../orders/domain/models/order_type.dart';
 import '../../../printing/domain/models/print_profile.dart';
 import '../../../printing/domain/models/print_settings.dart';
+import '../../../printing/presentation/widgets/printer_setup_section.dart';
 import '../../domain/models/pos_settings.dart';
 import '../controllers/settings_controller.dart';
 import 'settings_notices.dart';
@@ -55,11 +59,28 @@ class SettingsForm extends StatelessWidget {
                   ],
                   const _BusinessSection(),
                   const SizedBox(height: 16),
+                  const _TaxSection(),
+                  const SizedBox(height: 16),
                   const _PosBehaviourSection(),
                   const SizedBox(height: 16),
                   const _ReceiptSection(),
                   const SizedBox(height: 16),
                   const _PrintingSection(),
+                  const SizedBox(height: 16),
+                  // Supplied by the printing module, and saved by its own controller.
+                  // Everything above this line is one configuration written in one
+                  // transaction by the Save below; the printer binding is a device, not
+                  // part of that document, and has to be correctable and testable on its
+                  // own.
+                  const PrinterSetupSection(),
+                  const SizedBox(height: 16),
+                  // Cloud status and the manual sync. Provided by the app root, so
+                  // it renders nothing on a screen shown outside the full shell.
+                  const CloudSyncSettingsSection(),
+                  const SizedBox(height: 16),
+                  // The signed-in account and sign-out. Renders nothing on a local-only
+                  // build or when signed out, and nothing outside the full shell.
+                  const AccountSettingsSection(),
                 ],
               ),
             ),
@@ -95,10 +116,10 @@ class _BusinessSection extends StatelessWidget {
         SettingsTextField(
           label: 'Address',
           helper:
-              'Printed under the name. Left blank, no address line is '
-              'printed.',
+              'Printed under the name, one line for each line you enter here. '
+              'Left blank, no address line is printed.',
           value: controller.businessAddress,
-          maxLines: 2,
+          maxLines: 4,
           onChanged: controller.editBusinessAddress,
         ),
         SettingsTextField(
@@ -121,6 +142,63 @@ class _BusinessSection extends StatelessWidget {
           value: controller.gstin,
           error: controller.gstinError,
           onChanged: controller.editGstin,
+        ),
+      ],
+    );
+  }
+}
+
+/// The GST rate charged on new bills.
+///
+/// ## Why a list rather than a field
+///
+/// The rate is picked from the handful of combined slabs a restaurant is put on, so a list
+/// is both quicker at a counter and impossible to mistype. A free-text field would let
+/// `1.8` be saved where `18` was meant, and the mistake would only surface on a customer's
+/// bill.
+///
+/// ## What this section is careful to say
+///
+/// That the rate applies to new bills only, and that nothing here can reach a bill that has
+/// already been issued. That is the fact an owner needs before they change a slab, and it is
+/// true because settlement copies the rate onto the order.
+///
+/// No GST registration status is inferred from the GSTIN above. An outlet may hold a GSTIN
+/// and still be on a scheme that charges nothing, so the rate is asked for outright rather
+/// than assumed from another field.
+class _TaxSection extends StatelessWidget {
+  const _TaxSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final SettingsController controller = context.watch<SettingsController>();
+
+    return SettingsSection(
+      title: 'GST',
+      description:
+          'The combined GST rate charged on bills settled from now on. Bills '
+          'already issued keep the rate they were charged at, so changing this '
+          'never alters a bill you have given out.',
+      children: <Widget>[
+        SettingsChoiceField(
+          label: 'GST rate',
+          helper: controller.gstRate.isZero
+              ? 'No GST is charged, and no tax line is printed on a bill.'
+              : 'A bill is taxed on its subtotal after any discount, and the '
+                    'receipt shows the ${controller.gstRate.label} split as '
+                    'CGST and SGST.',
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              for (final GstRate rate in GstRate.selectable)
+                ChoiceChip(
+                  label: Text(rate.label),
+                  selected: controller.gstRate == rate,
+                  onSelected: (bool _) => controller.selectGstRate(rate),
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -180,8 +258,9 @@ class _ReceiptSection extends StatelessWidget {
     return SettingsSection(
       title: 'Receipt',
       description:
-          'Extra lines on the customer bill, and the UPI address its payment '
-          'QR pays. None of this changes an amount.',
+          'Extra lines on the customer bill, the review link its feedback QR '
+          'points at, and the UPI address for on-screen payment. None of this '
+          'changes an amount.',
       children: <Widget>[
         SettingsTextField(
           label: 'Receipt header',
@@ -198,6 +277,16 @@ class _ReceiptSection extends StatelessWidget {
               'return policy.',
           value: controller.receiptFooter,
           onChanged: controller.editReceiptFooter,
+        ),
+        SettingsTextField(
+          label: 'Feedback / Review URL',
+          hint: 'https://…',
+          helper:
+              'The paid bill prints a “Rate us” QR pointing here, so a customer '
+              'can leave a review. Left blank, no QR is printed: a QR pointing '
+              'nowhere is worse than none.',
+          value: controller.feedbackUrl,
+          onChanged: controller.editFeedbackUrl,
         ),
         SettingsTextField(
           label: 'UPI address',
@@ -308,11 +397,12 @@ class _PrintingSection extends StatelessWidget {
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
-          title: const Text('Print the payment QR'),
+          title: const Text('Print QR codes on receipts'),
           subtitle: Text(
             controller.qrEnabledError ??
-                'Turned off, the payment block is left off the bill entirely '
-                    'rather than printed with nothing under it.',
+                'Drives the feedback “Rate us” QR. Turned off, the QR block is '
+                    'left off the bill entirely rather than printed with '
+                    'nothing under it.',
             style: controller.qrEnabledError == null
                 ? null
                 : TextStyle(color: Theme.of(context).colorScheme.error),
@@ -440,8 +530,8 @@ class _SaveStatus extends StatelessWidget {
       ),
       _ => (
         Icons.info_outline,
-        'No printer is connected on this terminal yet, so these settings '
-            'decide how a bill would be laid out.',
+        'This Save covers the outlet’s details and the document layout. The '
+            'printer itself is saved in the Printer section.',
         theme.colorScheme.onSurfaceVariant,
       ),
     };

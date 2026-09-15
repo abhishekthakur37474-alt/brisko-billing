@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../../../../core/money/money.dart';
+import '../../domain/models/monochrome_bitmap.dart';
 import '../../domain/models/paper_width.dart';
 import '../../domain/models/print_profile.dart';
 import 'escpos_commands.dart';
@@ -252,6 +253,65 @@ class EscPosBuilder {
     } else {
       row(left, lineTotal.toDecimalString());
     }
+  }
+
+  // -------------------------------------------------------------- bit image ---
+
+  /// Prints [bitmap] as a raster bit image, centred.
+  ///
+  /// Used for the outlet logo at the top of a receipt. Mirrors [qrCode]: it is gated on
+  /// the printer actually having a graphics mode, so a device that cannot print bitmaps
+  /// gets a header with no logo rather than a page of garbage, and it prints nothing at
+  /// all for an empty image.
+  ///
+  /// A bitmap wider than the paper's printable dots, or larger than the 16-bit `GS v 0`
+  /// width/height fields can carry, is dropped rather than truncated: a logo sliced off
+  /// mid-row is worse than a receipt with none, and the header still identifies the
+  /// bill.
+  ///
+  /// ## Sent in bands
+  ///
+  /// The image is not one `GS v 0`. It is a run of them, each carrying at most
+  /// [EscPosCommands.rasterMaxBandBytes] of data — see that constant for why. A whole
+  /// 240×240 logo is 7200 bytes, more than a compact printer's input buffer, and sent
+  /// as a single command it overruns the buffer and prints as a block of garbage above
+  /// the outlet name. Split into bands no larger than the buffer, every transfer is one
+  /// the printer can hold, and because raster mode feeds the paper by exactly the dots
+  /// printed the bands stack into the original image with no seam. No line feed is put
+  /// between the bands for the same reason: a feed would open a white gap through the
+  /// logo.
+  void image(MonochromeBitmap bitmap) {
+    if (!profile.canPrintGraphics || bitmap.isEmpty) {
+      return;
+    }
+    if (bitmap.width > paper.printableDots) {
+      return;
+    }
+    if (bitmap.height > EscPosCommands.rasterMaxDimension ||
+        bitmap.widthBytes > EscPosCommands.rasterMaxDimension) {
+      return;
+    }
+
+    final int widthBytes = bitmap.widthBytes;
+    final int rowsPerBand = EscPosCommands.rasterRowsPerBand(widthBytes);
+
+    align(EscPosAlignment.centre);
+    for (int top = 0; top < bitmap.height; top += rowsPerBand) {
+      final int bandHeight = top + rowsPerBand <= bitmap.height
+          ? rowsPerBand
+          : bitmap.height - top;
+      _raw(
+        EscPosCommands.rasterBitImage(
+          widthBytes: widthBytes,
+          heightDots: bandHeight,
+        ),
+      );
+      final int start = top * widthBytes;
+      final int end = start + bandHeight * widthBytes;
+      _raw(Uint8List.sublistView(bitmap.rows, start, end));
+    }
+    _newLine();
+    align(EscPosAlignment.left);
   }
 
   // ---------------------------------------------------------------- qr code ---

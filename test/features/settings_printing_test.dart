@@ -185,28 +185,54 @@ void main() {
       expect(printed.hasLineContaining('Thank you, come again'), isTrue);
     });
 
-    test('a configured UPI address puts a real QR on the bill', () async {
+    test('the outlet address prints on one line and never overflows', () async {
+      // The current, shortened Brisko Pizza address. The previous long-form address
+      // (Delhi Haridwar Highway, NH-58 …) is deliberately gone: this is the exact line
+      // the outlet's terminal is configured with, and it fits an 80mm line unwrapped.
+      const String address = 'Near: RMP(PG) College, Gurukul Narsan, Haridwar';
       await saveSettings((SettingsController controller) {
-        controller.editUpiVpa('brisko@upi');
-        controller.editUpiPayeeName('Brisko Pizza Kothrud');
+        controller.editBusinessName('BRISKO PIZZA');
+        controller.editBusinessAddress(address);
+        controller.editBusinessPhone('+91 9058582158');
       });
 
       await settleOneBill();
       final EscPosTranscript printed = receipt();
 
-      expect(printed.hasLineContaining('Scan to pay by UPI'), isTrue);
-      expect(printed.qrPayloads, hasLength(1));
-      // Percent-encoded inside the payment URI, which is what the phone will read.
-      expect(printed.qrPayloads.single, contains('pa=brisko%40upi'));
-      // The payee shown in the customer's app is the configured one.
-      expect(printed.qrPayloads.single, contains('pn=Brisko+Pizza+Kothrud'));
-      // And the address is printed under the symbol so it can be checked by eye.
-      expect(printed.hasLineContaining('brisko@upi'), isTrue);
+      expect(printed.hasLineContaining('BRISKO PIZZA'), isTrue);
+      expect(
+        printed.hasLineContaining(
+          'Near: RMP(PG) College, Gurukul Narsan, Haridwar',
+        ),
+        isTrue,
+      );
+      expect(printed.hasLineContaining('Phone +91 9058582158'), isTrue);
+      // The retired long-form address must never come back onto the paper.
+      expect(printed.hasLineContaining('Delhi Haridwar Highway'), isFalse);
+      // Nothing runs off the 48-column paper.
+      expect(printed.widestLine, lessThanOrEqualTo(48));
     });
 
-    test('turning the QR off leaves the payment block off entirely', () async {
+    test('a configured feedback URL puts a review QR on the bill', () async {
       await saveSettings((SettingsController controller) {
-        controller.editUpiVpa('brisko@upi');
+        controller.editFeedbackUrl('https://g.page/r/brisko/review');
+      });
+
+      await settleOneBill();
+      final EscPosTranscript printed = receipt();
+
+      // The paid bill invites a review, and never asks to be paid again.
+      expect(printed.hasLineContaining('RATE US'), isTrue);
+      expect(printed.hasLineContaining('Scan to share your feedback'), isTrue);
+      expect(printed.hasLineContaining('Scan to pay'), isFalse);
+      expect(printed.qrPayloads, hasLength(1));
+      // The QR carries exactly the configured review URL.
+      expect(printed.qrPayloads.single, 'https://g.page/r/brisko/review');
+    });
+
+    test('turning the QR off leaves the feedback block off entirely', () async {
+      await saveSettings((SettingsController controller) {
+        controller.editFeedbackUrl('https://g.page/r/brisko/review');
         controller.setQrEnabled(isEnabled: false);
       });
 
@@ -215,7 +241,7 @@ void main() {
 
       // Not a heading with nothing under it, which would read as a fault.
       expect(printed.qrPayloads, isEmpty);
-      expect(printed.hasLineContaining('Scan to pay by UPI'), isFalse);
+      expect(printed.hasLineContaining('RATE US'), isFalse);
     });
 
     test('changing a business setting changes the next bill', () async {
@@ -326,7 +352,7 @@ void main() {
       expect(receipt().hasLineContaining('Paid by Cash'), isTrue);
     });
 
-    test('no settings key names an amount, a rate or a discount', () async {
+    test('no settings key names an amount or a discount', () async {
       await saveSettings((SettingsController controller) {
         controller.editBusinessName('Brisko Pizza Kothrud');
       });
@@ -334,8 +360,17 @@ void main() {
       final Map<String, String?> stored =
           (await settings.readAll()).valueOrNull!;
 
-      // The screen writes business, receipt, behaviour and printer keys, and nothing
-      // that could alter a charge.
+      // The screen writes business, receipt, behaviour, printer and GST-rate keys.
+      //
+      // `tax.gstRateBasisPoints` was added in step 14 and is the one key here that a bill's
+      // arithmetic reads. It is admitted deliberately, and it is still not an amount: it
+      // holds an integer count of basis points, it reaches a bill only through
+      // `BillTotals`, and settlement copies it onto the order so changing it cannot move a
+      // bill already issued — which is what the test above this one proves.
+      //
+      // The rule this test protects is otherwise unchanged. No key holds paise, and no key
+      // sets a discount: a discount is a decision about one bill taken at the counter, not a
+      // configured default, so there is nothing for Settings to store.
       for (final String key in stored.keys) {
         expect(
           key,
@@ -346,8 +381,19 @@ void main() {
             startsWith('printer.'),
             startsWith('pos.'),
             equals('tax.gstin'),
+            equals('tax.gstRateBasisPoints'),
           ),
           reason: '$key is not a setting the Settings screen may write',
+        );
+        expect(
+          key,
+          isNot(contains('Paise')),
+          reason: '$key names an amount. Settings holds no money.',
+        );
+        expect(
+          key.toLowerCase(),
+          isNot(contains('discount')),
+          reason: '$key configures a discount, which is a per-bill decision.',
         );
       }
     });
@@ -466,7 +512,7 @@ void main() {
 
     test('a saved QR module size and level reach the QR commands', () async {
       await saveSettings((SettingsController controller) {
-        controller.editUpiVpa('brisko@upi');
+        controller.editFeedbackUrl('https://g.page/r/brisko/review');
         controller.editQrModuleSize('9');
         controller.selectQrErrorCorrection(QrErrorCorrection.high);
       });

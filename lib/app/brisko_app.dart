@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 
 import '../core/constants/app_constants.dart';
 import '../core/theme/app_theme.dart';
+import '../features/auth/presentation/controllers/auth_controller.dart';
 import '../features/billing/domain/repositories/checkout_repository.dart';
 import '../features/billing/domain/repositories/held_bill_repository.dart';
 import '../features/billing/presentation/controllers/billing_controller.dart';
+import '../features/cloud_sync/presentation/controllers/sync_status_controller.dart';
 import '../features/customers/domain/repositories/customer_repository.dart';
 import '../features/inventory/domain/repositories/inventory_deduction_repository.dart';
 import '../features/inventory/domain/repositories/inventory_repository.dart';
@@ -15,6 +17,7 @@ import '../features/menu/domain/repositories/menu_repository.dart';
 import '../features/orders/domain/repositories/order_repository.dart';
 import '../features/payments/domain/repositories/payment_repository.dart';
 import '../features/payments/domain/repositories/refund_repository.dart';
+import '../features/printing/domain/printers/active_printer.dart';
 import '../features/printing/domain/printers/thermal_printer.dart';
 import '../features/printing/domain/services/active_print_profile.dart';
 import '../features/printing/domain/services/print_service.dart';
@@ -52,6 +55,20 @@ class BriskoApp extends StatelessWidget {
         ChangeNotifierProvider<ShellController>(
           create: (BuildContext context) => ShellController(),
         ),
+        // The sign-in state, built by the bootstrap and disposed with it, so this uses
+        // `.value` and does not own its lifecycle. Provided above the router so the auth
+        // gate and the Settings account section both read the one instance.
+        ChangeNotifierProvider<AuthController>.value(
+          value: dependencies.authController,
+        ),
+        // Presents the sync engine's status to the shell indicator and the
+        // Settings cloud section. Reads the coordinator; owns no sync logic.
+        ChangeNotifierProvider<SyncStatusController>(
+          create: (BuildContext context) => SyncStatusController(
+            coordinator: dependencies.syncCoordinator,
+            isCloudConfigured: dependencies.isCloudConfigured,
+          ),
+        ),
         // Plain `Provider` rather than a factory: these are stateless
         // collaborators created once at start-up, and rebuilding one mid-shift
         // would drop any active `watch` subscription.
@@ -85,6 +102,10 @@ class BriskoApp extends StatelessWidget {
           value: dependencies.salesReportRepository,
         ),
         Provider<ThermalPrinter>.value(value: dependencies.printer),
+        // The same object again, under the interface the Settings screen binds a printer
+        // through. Two types, one printer: the print service sends to it and the printer
+        // section reconfigures it, and neither can end up holding a different one.
+        Provider<ActivePrinter>.value(value: dependencies.activePrinter),
         Provider<PrintService>.value(value: dependencies.printService),
         // The same object the print service encodes with, so a corrected column count
         // saved in Settings lays out the next bill rather than the next launch.

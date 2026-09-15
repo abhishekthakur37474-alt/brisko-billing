@@ -13,6 +13,21 @@ import 'order_type.dart';
 /// original document exactly even if tax rates or menu prices change afterwards.
 /// Nothing recalculates a historical total from the menu tables.
 ///
+/// ## Why the rate and the discount rule are here too
+///
+/// [taxAmount] alone cannot say what rate produced it, and [discountAmount] alone cannot
+/// say whether the customer was given ten percent or a hundred rupees. Both facts are
+/// printed on the bill the customer keeps, so both are stored beside the amounts they
+/// explain: [taxRateBasisPoints] is the rate in force at settlement, copied in, and
+/// [discountType] with [discountValue] is the rule that was applied.
+///
+/// Copied, not looked up. The GST rate lives in Settings and settings change; a bill that
+/// read today's rate would restate itself the day the outlet moved slab, and the reprint
+/// would disagree with the paper in the customer's hand. See `M009BillTaxAndDiscount`.
+///
+/// A bill written before either column existed reads back as zero rate and no discount
+/// rule, which is exactly what those bills charged.
+///
 /// There is no table or seat reference. The outlet serves dine-in customers but
 /// does not run digital table management, so there is nothing to point at.
 class Order implements SyncableEntity {
@@ -27,6 +42,9 @@ class Order implements SyncableEntity {
     required this.totalAmount,
     required this.createdAt,
     required this.updatedAt,
+    this.taxRateBasisPoints = 0,
+    this.discountType,
+    this.discountValue = 0,
     this.customerId,
     this.notes,
     this.isDeleted = false,
@@ -52,6 +70,12 @@ class Order implements SyncableEntity {
       discountAmount: Money.fromPaise(row.requireInt('discountAmountPaise')),
       taxAmount: Money.fromPaise(row.requireInt('taxAmountPaise')),
       totalAmount: Money.fromPaise(row.requireInt('totalAmountPaise')),
+      // Optional reads, falling back to zero and null. A bill settled before
+      // `M009BillTaxAndDiscount` has no rate and no rule to read, and it charged neither,
+      // so the fallback states the truth about it rather than standing in for an unknown.
+      taxRateBasisPoints: row.optionalInt('taxRateBasisPoints'),
+      discountType: row.optionalString('discountType'),
+      discountValue: row.optionalInt('discountValue'),
       notes: row.optionalString('notes'),
       createdAt: row.requireDateTime(SyncColumns.createdAt),
       updatedAt: row.requireDateTime(SyncColumns.updatedAt),
@@ -83,6 +107,21 @@ class Order implements SyncableEntity {
   /// Amount payable. Persisted as calculated at settlement time.
   final Money totalAmount;
 
+  /// The combined GST rate this bill was charged at, in basis points where 10000 is 100%.
+  ///
+  /// Zero on a bill that charged no GST, including every bill settled before a rate could
+  /// be configured. Never read from Settings — this is the rate that was in force when the
+  /// money was taken.
+  final int taxRateBasisPoints;
+
+  /// The `BillDiscountType` name of the rule that produced [discountAmount], or `null`
+  /// when no bill-level discount rule was recorded.
+  final String? discountType;
+
+  /// The rule's magnitude in hundredths: basis points for a percentage, paise for a flat
+  /// amount. Meaningless without [discountType].
+  final int discountValue;
+
   final String? notes;
 
   final DateTime createdAt;
@@ -96,6 +135,18 @@ class Order implements SyncableEntity {
   @override
   final SyncState syncState;
 
+  /// What GST was charged on: [subtotal] less [discountAmount], as it was settled.
+  ///
+  /// Derived from two stored figures rather than stored itself, so it cannot disagree with
+  /// them.
+  Money get taxableAmount => subtotal - discountAmount;
+
+  /// True when this bill was given a bill-level discount.
+  bool get hasDiscount => !discountAmount.isZero;
+
+  /// True when this bill carries a tax line.
+  bool get hasTax => !taxAmount.isZero;
+
   Order copyWith({
     String? orderNumber,
     OrderType? orderType,
@@ -105,6 +156,9 @@ class Order implements SyncableEntity {
     Money? discountAmount,
     Money? taxAmount,
     Money? totalAmount,
+    int? taxRateBasisPoints,
+    String? discountType,
+    int? discountValue,
     String? notes,
     DateTime? updatedAt,
     bool? isDeleted,
@@ -120,6 +174,9 @@ class Order implements SyncableEntity {
       discountAmount: discountAmount ?? this.discountAmount,
       taxAmount: taxAmount ?? this.taxAmount,
       totalAmount: totalAmount ?? this.totalAmount,
+      taxRateBasisPoints: taxRateBasisPoints ?? this.taxRateBasisPoints,
+      discountType: discountType ?? this.discountType,
+      discountValue: discountValue ?? this.discountValue,
       notes: notes ?? this.notes,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -144,6 +201,9 @@ class Order implements SyncableEntity {
       'discountAmountPaise': discountAmount.paise,
       'taxAmountPaise': taxAmount.paise,
       'totalAmountPaise': totalAmount.paise,
+      'taxRateBasisPoints': taxRateBasisPoints,
+      'discountType': discountType,
+      'discountValue': discountValue,
       'notes': notes,
     };
   }

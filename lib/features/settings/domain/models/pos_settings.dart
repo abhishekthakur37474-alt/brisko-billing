@@ -1,3 +1,4 @@
+import '../../../billing/domain/models/gst_rate.dart';
 import '../../../orders/domain/models/order_type.dart';
 import 'setting_keys.dart';
 
@@ -24,11 +25,17 @@ import 'setting_keys.dart';
 /// is one of four values this build already defines, and settlement has always had to
 /// open on one of them.
 ///
-/// ## No money
+/// ## No money, and a rate is not money
 ///
-/// There is no amount, no tax rate and no discount on this class. Settings does not
-/// calculate money: every figure on a bill is carried from the committed order, and
-/// nothing the operator types here can change one.
+/// There is no amount and no discount on this class. Settings does not calculate money:
+/// every figure on a bill is carried from the committed order, and nothing the operator
+/// types here can change one.
+///
+/// [gstRate] is the one thing here that takes part in a calculation, and it is deliberately
+/// not an amount: it is an integer count of basis points, it holds no paise, and it can only
+/// reach a bill through `BillTotals`. It applies to bills settled *after* it is saved.
+/// Changing it cannot move a bill that has already been issued, because settlement copies
+/// the rate onto the order and nothing reads it back out of here afterwards.
 class PosSettings {
   const PosSettings({
     this.businessName,
@@ -37,9 +44,11 @@ class PosSettings {
     this.gstin,
     this.receiptHeader,
     this.receiptFooter,
+    this.feedbackUrl,
     this.upiVpa,
     this.upiPayeeName,
     this.defaultOrderType = fallbackOrderType,
+    this.gstRate = GstRate.zero,
   });
 
   /// What is stored in the settings table, read into one value.
@@ -55,10 +64,17 @@ class PosSettings {
       gstin: _text(stored[SettingKeys.gstin]),
       receiptHeader: _text(stored[SettingKeys.receiptHeader]),
       receiptFooter: _text(stored[SettingKeys.receiptFooter]),
+      feedbackUrl: _text(stored[SettingKeys.feedbackUrl]),
       upiVpa: _text(stored[SettingKeys.upiVpa]),
       upiPayeeName: _text(stored[SettingKeys.upiPayeeName]),
       defaultOrderType:
           _orderType(stored[SettingKeys.defaultOrderType]) ?? fallbackOrderType,
+      // Zero when the key is absent or holds something that is not a rate. An unreadable
+      // rate must not become a guess: charging tax the outlet did not configure is worse
+      // than charging none, and a missing key means an outlet that has not set one up.
+      gstRate:
+          GstRate.tryParseStored(stored[SettingKeys.gstRateBasisPoints]) ??
+          GstRate.zero,
     );
   }
 
@@ -104,6 +120,12 @@ class PosSettings {
   /// Closing line, for example a thank-you or a return policy.
   final String? receiptFooter;
 
+  /// URL the paid receipt's feedback QR points at, so a customer can leave a review.
+  ///
+  /// No feedback QR is printed when this is null: a QR pointing at nothing is worse
+  /// than an absent one.
+  final String? feedbackUrl;
+
   /// UPI address the payment QR pays. No QR is printed when this is null.
   final String? upiVpa;
 
@@ -112,6 +134,12 @@ class PosSettings {
 
   /// Order type the checkout flow opens on.
   final OrderType defaultOrderType;
+
+  /// Combined GST rate applied to new bills. [GstRate.zero] until the outlet configures
+  /// one, so an unconfigured terminal charges no tax and its bills are unchanged.
+  ///
+  /// Applies only to bills settled after it is saved. See the class comment.
+  final GstRate gstRate;
 
   /// These settings as rows for the settings table.
   ///
@@ -124,9 +152,14 @@ class PosSettings {
     SettingKeys.gstin: gstin,
     SettingKeys.receiptHeader: receiptHeader,
     SettingKeys.receiptFooter: receiptFooter,
+    SettingKeys.feedbackUrl: feedbackUrl,
     SettingKeys.upiVpa: upiVpa,
     SettingKeys.upiPayeeName: upiPayeeName,
     SettingKeys.defaultOrderType: defaultOrderType.name,
+    // Always written, including zero. Unlike the text fields, absent and zero mean the same
+    // thing here — no GST — so there is nothing to be gained by removing the row, and
+    // writing it means the stored configuration states what the terminal is charging.
+    SettingKeys.gstRateBasisPoints: gstRate.toStored(),
   };
 
   bool get hasBusinessName => businessName != null;
@@ -141,7 +174,12 @@ class PosSettings {
 
   bool get hasReceiptFooter => receiptFooter != null;
 
+  bool get hasFeedbackUrl => feedbackUrl != null;
+
   bool get hasUpiVpa => upiVpa != null;
+
+  /// True when new bills carry a GST line.
+  bool get chargesGst => gstRate.isCharged;
 
   /// True when the outlet has entered what a tax invoice needs.
   ///
@@ -156,9 +194,11 @@ class PosSettings {
     String? gstin,
     String? receiptHeader,
     String? receiptFooter,
+    String? feedbackUrl,
     String? upiVpa,
     String? upiPayeeName,
     OrderType? defaultOrderType,
+    GstRate? gstRate,
   }) {
     return PosSettings(
       businessName: businessName ?? this.businessName,
@@ -167,9 +207,11 @@ class PosSettings {
       gstin: gstin ?? this.gstin,
       receiptHeader: receiptHeader ?? this.receiptHeader,
       receiptFooter: receiptFooter ?? this.receiptFooter,
+      feedbackUrl: feedbackUrl ?? this.feedbackUrl,
       upiVpa: upiVpa ?? this.upiVpa,
       upiPayeeName: upiPayeeName ?? this.upiPayeeName,
       defaultOrderType: defaultOrderType ?? this.defaultOrderType,
+      gstRate: gstRate ?? this.gstRate,
     );
   }
 
@@ -182,9 +224,11 @@ class PosSettings {
       other.gstin == gstin &&
       other.receiptHeader == receiptHeader &&
       other.receiptFooter == receiptFooter &&
+      other.feedbackUrl == feedbackUrl &&
       other.upiVpa == upiVpa &&
       other.upiPayeeName == upiPayeeName &&
-      other.defaultOrderType == defaultOrderType;
+      other.defaultOrderType == defaultOrderType &&
+      other.gstRate == gstRate;
 
   @override
   int get hashCode => Object.hash(
@@ -194,15 +238,18 @@ class PosSettings {
     gstin,
     receiptHeader,
     receiptFooter,
+    feedbackUrl,
     upiVpa,
     upiPayeeName,
     defaultOrderType,
+    gstRate,
   );
 
   @override
   String toString() =>
       'PosSettings(name: ${businessName ?? 'unset'}, '
       'gstin: ${hasGstin ? 'set' : 'unset'}, '
+      'gst: ${gstRate.label}, '
       'defaultOrderType: ${defaultOrderType.name})';
 
   /// [stored] with its surrounding whitespace removed, or `null` when it holds nothing.

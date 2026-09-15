@@ -1,7 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
+import '../core/data/connectivity/connectivity_monitor.dart';
+import '../core/data/connectivity/network_probe.dart';
+import '../core/data/connectivity/polling_connectivity_monitor.dart';
 import '../core/data/local/sqlite/sqlite_database.dart';
 import '../core/data/local/sqlite/sqlite_outbox_store.dart';
+import '../core/data/local/sqlite/sqlite_sync_metadata_store.dart';
+import '../core/data/remote/firebase/firebase_config.dart';
+import '../core/data/remote/firebase/firebase_options.dart';
+import '../core/data/remote/remote_store_factory.dart';
+import '../core/data/sync/default_sync_coordinator.dart';
+import '../core/data/sync/initial_sync_service.dart';
+import '../core/data/sync/sync_coordinator.dart';
+import '../core/data/sync/sync_endpoint.dart';
+import '../core/data/sync/sync_metadata_store.dart';
+import '../features/auth/data/auth_session_store.dart';
+import '../features/auth/presentation/controllers/auth_controller.dart';
 import '../features/billing/data/repositories/sqlite_checkout_repository.dart';
 import '../features/billing/data/repositories/sqlite_held_bill_repository.dart';
 import '../features/billing/domain/repositories/checkout_repository.dart';
@@ -26,10 +42,14 @@ import '../features/payments/domain/repositories/payment_repository.dart';
 import '../features/payments/domain/repositories/refund_repository.dart';
 import '../features/printing/data/default_print_service.dart';
 import '../features/printing/data/escpos/configurable_escpos_encoder.dart';
-import '../features/printing/data/printers/unconfigured_thermal_printer.dart';
+import '../features/printing/data/printers/configurable_thermal_printer.dart';
+import '../features/printing/data/printers/platform_thermal_printer_factory.dart';
 import '../features/printing/data/repository_sale_print_document_source.dart';
 import '../features/printing/data/settings_business_identity_source.dart';
+import '../features/printing/domain/models/monochrome_bitmap.dart';
 import '../features/printing/domain/models/print_settings.dart';
+import '../features/printing/domain/models/printer_connection_settings.dart';
+import '../features/printing/domain/printers/active_printer.dart';
 import '../features/printing/domain/printers/thermal_printer.dart';
 import '../features/printing/domain/services/active_print_profile.dart';
 import '../features/printing/domain/services/print_job_factory.dart';
@@ -40,6 +60,9 @@ import '../features/settings/data/repositories/sqlite_settings_repository.dart';
 import '../features/settings/domain/active_pos_settings.dart';
 import '../features/settings/domain/models/pos_settings.dart';
 import '../features/settings/domain/repositories/settings_repository.dart';
+import 'receipt_logo.dart';
+import 'sync/cloud_sync_activation.dart';
+import 'sync/sync_endpoints.dart';
 
 /// Everything the application needs, constructed once at start-up.
 ///
@@ -49,6 +72,12 @@ class AppDependencies {
   const AppDependencies({
     required this.database,
     required this.outbox,
+    required this.syncCoordinator,
+    required this.connectivityMonitor,
+    required this.remoteStoreFactory,
+    required this.syncMetadataStore,
+    required this.isCloudConfigured,
+    required this.authController,
     required this.menuRepository,
     required this.orderRepository,
     required this.checkoutRepository,
@@ -64,15 +93,45 @@ class AppDependencies {
     required this.settingsRepository,
     required this.activeSettings,
     required this.printer,
+    required this.activePrinter,
     required this.activePrintProfile,
     required this.printService,
   });
 
   final SqliteDatabase database;
 
-  /// Durable upload queue. Implemented and available, but not yet attached to the
-  /// stores, because nothing drains it until a backend exists.
+  /// Durable upload queue. Reconciled from the local sync state and drained by the
+  /// [syncCoordinator] whenever the cloud is reachable.
   final SqliteOutboxStore outbox;
+
+  /// Drives push/pull synchronisation between SQLite and the cloud. Runs entirely
+  /// behind the write path, so nothing here can delay a sale. Started only when a
+  /// cloud backend is configured; otherwise it exists but does nothing, so the
+  /// outbox never fills for a terminal that has no backend to drain to.
+  final SyncCoordinator syncCoordinator;
+
+  /// Reports whether the cloud is currently reachable. Drives the sync indicator
+  /// and the automatic drain when the link returns.
+  final ConnectivityMonitor connectivityMonitor;
+
+  /// Builds a cloud store per collection. Either a real Firebase factory or the
+  /// no-op factory that reports the cloud as unreachable.
+  final RemoteStoreFactory remoteStoreFactory;
+
+  /// Durable bookmarks for the sync engine: the pull cursor and the last
+  /// successful sync time. Read by the Settings cloud section.
+  final SyncMetadataStore syncMetadataStore;
+
+  /// True when this build carries a Firebase project, so the cloud is available and the
+  /// login gate applies. When false, the terminal runs purely local and the UI says the
+  /// cloud is not configured.
+  final bool isCloudConfigured;
+
+  /// The terminal's sign-in state and the sign-in/sign-out actions. Gates the application
+  /// between the login screen and the till, and switches synchronisation on and off with
+  /// the session. On a local-only build it reports itself authenticated so the till opens
+  /// straight away.
+  final AuthController authController;
 
   final MenuRepository menuRepository;
   final OrderRepository orderRepository;
@@ -143,6 +202,13 @@ class AppDependencies {
   /// Swapping in a USB or LAN adapter is a change to this one line.
   final ThermalPrinter printer;
 
+  /// The printer binding the operator can change while the application is running.
+  ///
+  /// The same object as [printer], deliberately: the print service has to keep sending to
+  /// whatever the Settings screen last saved, and holding two printers is how a bill comes
+  /// to be sent to the one that was replaced. See [ConfigurableThermalPrinter].
+  final ActivePrinter activePrinter;
+
   /// The layout documents are encoded for, and the one thing about printing the operator
   /// can change while the application is running.
   ///
@@ -158,6 +224,15 @@ class AppDependencies {
   final PrintService printService;
 
   Future<void> dispose() async {
+    authController.dispose();
+    // Sync first: stop its timer and connectivity listener before the database it
+    // reads is closed underneath it.
+    await syncCoordinator.dispose();
+    final ConnectivityMonitor monitor = connectivityMonitor;
+    if (monitor is PollingConnectivityMonitor) {
+      await monitor.dispose();
+    }
+    await remoteStoreFactory.dispose();
     await printer.dispose();
     await outbox.dispose();
     await database.close();
@@ -173,6 +248,10 @@ class AppDependencies {
 /// Pass [databasePath] to point at a different file, which is what tests use.
 Future<AppDependencies> bootstrap({String? databasePath}) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // The outlet logo, decoded once from its asset and reduced to printable dots. A
+  // build without the asset gets null, and receipts print with just the outlet name.
+  final MonochromeBitmap? receiptLogo = await loadReceiptLogo();
 
   final SqliteDatabase database = SqliteDatabase();
   await database.open(path: databasePath);
@@ -191,11 +270,6 @@ Future<AppDependencies> bootstrap({String? databasePath}) async {
     database: database,
   );
 
-  // No printer has been bought yet, so the terminal honestly has none. Everything
-  // above this line is already written against `ThermalPrinter`, so connecting one
-  // later replaces this single construction.
-  final ThermalPrinter printer = UnconfiguredThermalPrinter();
-
   // The stored configuration, read once, before the first frame. A failure here is not
   // fatal: an unreadable settings table means an unconfigured terminal, which prints its
   // own name, claims no GSTIN and lays documents out for the printer's own profile. The
@@ -205,6 +279,20 @@ Future<AppDependencies> bootstrap({String? databasePath}) async {
 
   final ActivePosSettings activeSettings = ActivePosSettings(
     settings: PosSettings.fromStored(stored),
+  );
+
+  // The printer the operator has configured, resolved through the transport factory.
+  //
+  // The platform factory chooses a real transport from the saved settings and the
+  // operating system: a CUPS raw queue for a USB printer on macOS, the Windows print
+  // spooler (RAW datatype) for a USB printer on Windows, and a TCP socket for a network
+  // printer on either. A connection this build cannot serve still resolves to a printer
+  // that reports honestly that it cannot be reached, rather than one that pretends to
+  // print. Everything above this line is written against `ThermalPrinter`, so this single
+  // seam is the whole of the hardware integration.
+  final ConfigurableThermalPrinter printer = ConfigurableThermalPrinter(
+    factory: PlatformThermalPrinterFactory(),
+    settings: PrinterConnectionSettings.fromStored(stored),
   );
 
   // The encoder holds the profile rather than being handed a fixed one, so that a
@@ -217,9 +305,117 @@ Future<AppDependencies> bootstrap({String? databasePath}) async {
         settings: PrintSettings.fromStored(stored, fallback: printer.profile),
       );
 
+  // ---------------------------------------------------------------- cloud sync ---
+  //
+  // The cloud is optional, and split into two things it was previously conflated with.
+  //
+  // The Firebase *project* — its id and client-safe Web API key — is application
+  // configuration, baked into the build (see FirebaseOptions), not a restaurant setting
+  // and never typed into a screen. A build compiled without a project runs purely local:
+  // every change is saved to SQLite and queued, exactly the offline-first behaviour the
+  // architecture already handles.
+  //
+  // The *session* is per terminal: obtained by signing in and persisted locally, so the
+  // next launch skips the login screen. It is not part of the build. A build that has a
+  // project but no persisted session shows the login screen; local billing is unaffected
+  // either way.
+  final FirebaseOptions firebaseOptions = FirebaseOptions.current;
+  final bool isCloudConfigured = firebaseOptions.isConfigured;
+
+  final AuthSessionStore sessionStore = AuthSessionStore(settings: settings);
+  final PersistedSession? persistedSession = isCloudConfigured
+      ? sessionStore.fromStored(stored)
+      : null;
+  final bool isAuthenticated = persistedSession != null;
+
+  // Project id and key from the build; the refresh token from the persisted session, if
+  // any. A build with a project but no session yet is "configured" for the cloud but not
+  // authenticated: the login screen is shown, and nothing is uploaded until sign-in.
+  final FirebaseConfig cloudConfig = firebaseOptions.toConfig(
+    refreshToken: persistedSession?.refreshToken,
+  );
+
+  // Build the whole cloud transport whenever the build has a project, regardless of
+  // whether there is a session yet: signing in later adopts a session into the shared
+  // FirebaseAuthSession this factory holds, and every store then signs its requests with
+  // it. A local-only build gets the no-op factory that reports the cloud unreachable.
+  final FirebaseRemoteStoreFactory? firebaseFactory = isCloudConfigured
+      ? FirebaseRemoteStoreFactory(config: cloudConfig)
+      : null;
+  final RemoteStoreFactory remoteFactory =
+      firebaseFactory ?? const NoopRemoteStoreFactory();
+
+  final SqliteOutboxStore outbox = SqliteOutboxStore(database: database);
+  final SqliteSyncMetadataStore syncMetadata = SqliteSyncMetadataStore(
+    database: database,
+  );
+
+  // The Firestore host is a constant, so the connectivity probe targets it whenever the
+  // build has a project — even before sign-in — so that a sync started on login notices
+  // the link straight away. A local-only build has no host and reads as offline.
+  final PollingConnectivityMonitor connectivity = PollingConnectivityMonitor(
+    probe: HostLookupProbe(
+      host: isCloudConfigured ? FirebaseConfig.firestoreHost : null,
+    ),
+  );
+
+  final List<SyncEndpointBase> endpoints = buildSyncEndpoints(
+    database,
+    remoteFactory,
+  );
+
+  final DefaultSyncCoordinator syncCoordinator = DefaultSyncCoordinator(
+    endpoints: endpoints,
+    outbox: outbox,
+    metadata: syncMetadata,
+    connectivity: connectivity,
+  );
+
+  // The one-time restore/bootstrap, in the background so a slow or absent network never
+  // delays the first frame. It refuses to run over a database that already holds bills, so
+  // it can only ever seed a genuinely empty terminal.
+  final InitialSyncService initialSync = InitialSyncService(
+    endpoints: endpoints,
+    metadata: syncMetadata,
+    hasOperationalData: () => _hasOperationalData(database),
+  );
+
+  // The seam between "signed in" and "syncing". Present only on a cloud build; a
+  // local-only build has nothing to activate.
+  final CloudSyncActivation? syncActivation = isCloudConfigured
+      ? DefaultCloudSyncActivation(
+          connectivity: connectivity,
+          coordinator: syncCoordinator,
+          initialSync: initialSync,
+        )
+      : null;
+
+  final AuthController authController = AuthController(
+    isCloudEnabled: isCloudConfigured,
+    initiallyAuthenticated: isAuthenticated,
+    initialEmail: persistedSession?.email,
+    authClient: firebaseFactory?.authClient,
+    session: firebaseFactory?.session,
+    sessionStore: sessionStore,
+    syncActivation: syncActivation,
+  );
+
+  // Only start the engine when the terminal is already signed in. An unauthenticated
+  // terminal shows the login screen and syncs nothing; signing in switches it on through
+  // the activation above.
+  if (isAuthenticated) {
+    await syncActivation!.enable();
+  }
+
   return AppDependencies(
     database: database,
-    outbox: SqliteOutboxStore(database: database),
+    outbox: outbox,
+    syncCoordinator: syncCoordinator,
+    connectivityMonitor: connectivity,
+    remoteStoreFactory: remoteFactory,
+    syncMetadataStore: syncMetadata,
+    isCloudConfigured: isCloudConfigured,
+    authController: authController,
     menuRepository: SqliteMenuRepository(database: database),
     orderRepository: orders,
     checkoutRepository: SqliteCheckoutRepository(database: database),
@@ -237,6 +433,7 @@ Future<AppDependencies> bootstrap({String? databasePath}) async {
     settingsRepository: settings,
     activeSettings: activeSettings,
     printer: printer,
+    activePrinter: printer,
     activePrintProfile: encoder,
     printService: DefaultPrintService(
       printer: printer,
@@ -251,9 +448,32 @@ Future<AppDependencies> bootstrap({String? databasePath}) async {
         kots: kots,
         customers: customers,
         // Business details, GSTIN and the UPI address all come from settings. None of
-        // them has a hard-coded value anywhere in the printing layer.
-        identity: SettingsBusinessIdentitySource(settings: settings),
+        // them has a hard-coded value anywhere in the printing layer. The logo is the
+        // one non-text element: an asset decoded above, or null when none is bundled.
+        identity: SettingsBusinessIdentitySource(
+          settings: settings,
+          logo: receiptLogo,
+        ),
       ),
     ),
   );
+}
+
+/// True when the terminal already holds real, operator-created records.
+///
+/// The initial cloud restore is only safe over a database that has none, so this
+/// checks the transactional tables — bills, payments, customers and the rest — and
+/// deliberately ignores the seeded menu, which every fresh install carries. A
+/// single non-empty table is enough to conclude the terminal is in use, so the
+/// scan stops at the first row it finds.
+Future<bool> _hasOperationalData(SqliteDatabase database) async {
+  for (final String table in operationalTables) {
+    final List<Map<String, Object?>> rows = await database.database.rawQuery(
+      'SELECT 1 FROM $table LIMIT 1',
+    );
+    if (rows.isNotEmpty) {
+      return true;
+    }
+  }
+  return false;
 }

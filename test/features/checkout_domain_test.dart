@@ -59,9 +59,14 @@ void main() {
       expect(totals.isPayable, isTrue);
     });
 
-    test('discount and tax are carried as zero, not omitted', () {
-      // Both columns exist on the orders table and both are written. Neither has a
-      // source in this build, so both must be exactly zero rather than invented.
+    test('a cart on its own carries no discount and no tax', () {
+      // `BillTotals.fromCart` is what a cart alone can answer. A discount is entered at
+      // settlement and a GST rate comes from the outlet's configuration, so neither is the
+      // cart's to know, and both must be exactly zero here rather than guessed at.
+      //
+      // This is also the shape every bill had before step 14, which is why an outlet that
+      // configures no rate still settles exactly this bill. The discounted and taxed cases
+      // live in `gst_discount_domain_test.dart`.
       final BillTotals totals = BillTotals.fromCart(
         cartOf(<CartLine>[lineOf(id: 'l1', item: itemPriced('250.00'))]),
       );

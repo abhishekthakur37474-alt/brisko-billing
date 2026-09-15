@@ -8,6 +8,7 @@ import '../../../utils/result.dart';
 import '../../local_store.dart';
 import '../../sync/outbox_entry.dart';
 import '../../sync/outbox_store.dart';
+import '../../sync/remote_merge_report.dart';
 import '../../sync/sync_state.dart';
 import '../../sync/syncable_entity.dart';
 import 'sqlite_database.dart';
@@ -148,6 +149,84 @@ class SqliteLocalStore<T extends SyncableEntity> implements LocalStore<T> {
       );
       return rows.map(fromRow).toList(growable: false);
     }, context: 'load unsynced records');
+  }
+
+  @override
+  Future<Result<void>> markSynced(String id, DateTime version) {
+    return SqliteErrorMapper.guard<void>(() async {
+      // Guarded on updatedAt: if the record changed after it was pushed, the
+      // stored timestamp no longer matches the version that reached the cloud, so
+      // it is left pending and the newer edit is uploaded on the next cycle.
+      final int updated = await _db.update(
+        table,
+        <String, Object?>{SyncColumns.syncState: SyncState.synced.name},
+        where:
+            '${SyncColumns.id} = ? AND ${SyncColumns.updatedAt} = ? '
+            'AND ${SyncColumns.syncState} != ?',
+        whereArgs: <Object?>[
+          id,
+          version.toUtc().millisecondsSinceEpoch,
+          SyncState.synced.name,
+        ],
+      );
+      if (updated > 0) {
+        database.notifyTableChanged(table);
+      }
+    }, context: 'mark the record synced');
+  }
+
+  @override
+  Future<Result<RemoteMergeReport>> applyRemoteChanges(Iterable<T> entities) {
+    return SqliteErrorMapper.guard<RemoteMergeReport>(() async {
+      final List<T> incoming = entities.toList(growable: false);
+      if (incoming.isEmpty) {
+        return const RemoteMergeReport.empty();
+      }
+
+      int applied = 0;
+      int keptLocal = 0;
+
+      await _db.transaction((Transaction txn) async {
+        for (final T entity in incoming) {
+          // Reads the local row including a soft-deleted one, because a delete is
+          // itself a change with a timestamp: an older undelete from the cloud
+          // must not resurrect a record this terminal has since removed.
+          final List<Map<String, Object?>> rows = await txn.query(
+            table,
+            columns: <String>[SyncColumns.updatedAt],
+            where: '${SyncColumns.id} = ?',
+            whereArgs: <Object?>[entity.id],
+            limit: 1,
+          );
+
+          final int remoteAt = entity.updatedAt.toUtc().millisecondsSinceEpoch;
+
+          if (rows.isNotEmpty) {
+            final int localAt = rows.first[SyncColumns.updatedAt]! as int;
+            // Strictly newer wins. Older or equal is held back, protecting a
+            // newer local record — including a settled bill not yet uploaded.
+            if (remoteAt <= localAt) {
+              keptLocal++;
+              continue;
+            }
+          }
+
+          // Stored as synced: it now matches the cloud, so it must not be queued
+          // straight back for upload.
+          final Map<String, dynamic> values = Map<String, dynamic>.from(
+            entity.toMap(),
+          )..[SyncColumns.syncState] = SyncState.synced.name;
+
+          await SqliteUpsert.run(txn, table, values);
+          applied++;
+        }
+      });
+
+      if (applied > 0) {
+        database.notifyTableChanged(table);
+      }
+      return RemoteMergeReport(applied: applied, keptLocal: keptLocal);
+    }, context: 'apply cloud changes');
   }
 
   @override

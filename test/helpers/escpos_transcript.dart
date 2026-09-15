@@ -19,11 +19,37 @@ import 'package:brisko_billing/features/printing/data/escpos/escpos_commands.dar
 /// [commands] keeps every command sequence in order, so a test can assert that the
 /// document was initialised, that the total was bold, that a QR was emitted and that the
 /// paper was fed before it was cut.
+/// A raster bit image decoded out of an ESC/POS stream.
+///
+/// The `GS v 0` header states the row width in bytes and the height in dots; the
+/// packed pixel [data] follows. A test can assert a logo was emitted, that its height
+/// is what the source bitmap had, and that the byte count is `widthBytes * heightDots`.
+class EscPosRasterImage {
+  const EscPosRasterImage({
+    required this.widthBytes,
+    required this.heightDots,
+    required this.data,
+  });
+
+  /// Row width in bytes, as the header states it.
+  final int widthBytes;
+
+  /// Number of rows, i.e. the image height in dots.
+  final int heightDots;
+
+  /// The packed image bytes that followed the header.
+  final List<int> data;
+
+  /// The width in bytes times the height: what the byte count should be.
+  int get expectedByteCount => widthBytes * heightDots;
+}
+
 class EscPosTranscript {
   const EscPosTranscript({
     required this.lines,
     required this.commands,
     required this.qrPayloads,
+    this.rasterImages = const <EscPosRasterImage>[],
   });
 
   /// Decodes [bytes] as this build's ESC/POS output.
@@ -35,6 +61,7 @@ class EscPosTranscript {
     final List<String> lines = <String>[];
     final List<List<int>> commands = <List<int>>[];
     final List<String> qrPayloads = <String>[];
+    final List<EscPosRasterImage> rasterImages = <EscPosRasterImage>[];
     final StringBuffer current = StringBuffer();
 
     int index = 0;
@@ -75,6 +102,30 @@ class EscPosTranscript {
           index += length;
           continue;
         }
+        if (selector == 0x76) {
+          // GS v 0 m xL xH yL yH <data> — raster bit image. The width (in bytes) and
+          // height (in dots) are little-endian 16-bit pairs, and exactly
+          // widthBytes * heightDots data bytes follow the eight-byte header. Consuming
+          // the whole block is what keeps the image bytes from being read as text.
+          final int widthBytes =
+              _at(bytes, index + 4) | (_at(bytes, index + 5) << 8);
+          final int heightDots =
+              _at(bytes, index + 6) | (_at(bytes, index + 7) << 8);
+          final int total = 8 + widthBytes * heightDots;
+          final List<int> block = _slice(bytes, index, total);
+          // Only the header is recorded as a command, so a selector assertion sees the
+          // GS v (0x76) without the image bytes leaking into the command list.
+          commands.add(_slice(bytes, index, 8));
+          rasterImages.add(
+            EscPosRasterImage(
+              widthBytes: widthBytes,
+              heightDots: heightDots,
+              data: block.length > 8 ? block.sublist(8) : const <int>[],
+            ),
+          );
+          index += total;
+          continue;
+        }
         commands.add(_slice(bytes, index, 3));
         index += 3;
         continue;
@@ -92,6 +143,7 @@ class EscPosTranscript {
       lines: lines,
       commands: commands,
       qrPayloads: qrPayloads,
+      rasterImages: rasterImages,
     );
   }
 
@@ -104,6 +156,36 @@ class EscPosTranscript {
 
   /// Data stored into each QR symbol.
   final List<String> qrPayloads;
+
+  /// Raster bit images emitted, in order. A logo larger than one buffer-safe band is
+  /// emitted as several of these, back to back; [logo] stitches them together.
+  final List<EscPosRasterImage> rasterImages;
+
+  /// The raster bands stitched back into the single logical image they form.
+  ///
+  /// The builder sends a logo as a run of `GS v 0` bands, each under the printer's
+  /// input buffer, with nothing between them; on paper they stack into one image. This
+  /// reverses that: it concatenates the bands' data and sums their heights, so a test
+  /// can assert the whole logo's height and total byte count without caring how many
+  /// bands carried it. Returns `null` when no image was emitted. All bands are expected
+  /// to share the same row width, which the builder guarantees for one image.
+  EscPosRasterImage? get logo {
+    if (rasterImages.isEmpty) {
+      return null;
+    }
+    final int widthBytes = rasterImages.first.widthBytes;
+    int heightDots = 0;
+    final List<int> data = <int>[];
+    for (final EscPosRasterImage band in rasterImages) {
+      heightDots += band.heightDots;
+      data.addAll(band.data);
+    }
+    return EscPosRasterImage(
+      widthBytes: widthBytes,
+      heightDots: heightDots,
+      data: data,
+    );
+  }
 
   /// The whole document as text, for a readable failure message.
   String get text => lines.join('\n');

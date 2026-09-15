@@ -336,6 +336,83 @@ class BillingController extends ChangeNotifier {
     await loadMenu();
   }
 
+  /// Re-reads the menu so a change made on the menu-management screen is reflected at
+  /// the counter without a restart.
+  ///
+  /// This is what makes a deactivated item leave the grid and a new price take effect
+  /// on the next line: the billing screen calls it when it comes back into view. The
+  /// cart and any in-progress configuration are deliberately left untouched — a price
+  /// change applies to new lines, never to what is already on the bill, and a draft
+  /// the cashier is part way through building is not the menu's to discard.
+  ///
+  /// The currently browsed category is kept if it still exists and is active; if it was
+  /// deactivated or removed, browsing falls back to the first category. Nothing here
+  /// blanks the screen while it reloads: the existing grid stays until the new one is
+  /// ready, so a refresh is invisible unless something actually changed.
+  Future<void> reloadMenu() async {
+    if (_isLoadingMenu) {
+      return;
+    }
+
+    final Result<List<MenuCategory>> result = await _menuRepository
+        .loadCategories();
+
+    final List<MenuCategory>? loaded = result.fold<List<MenuCategory>?>(
+      onOk: (List<MenuCategory> categories) => categories,
+      onErr: (AppFailure failure) {
+        _recordFailure(failure);
+        return null;
+      },
+    );
+
+    if (loaded == null) {
+      // A refresh failure is a strip, not a dead end: the menu already on screen
+      // stays usable.
+      notifyListeners();
+      return;
+    }
+
+    _hasAttemptedLoad = true;
+    _categories = List<MenuCategory>.unmodifiable(loaded);
+
+    MenuCategory? selected;
+    final String? previousId = _selectedCategory?.id;
+    if (previousId != null) {
+      for (final MenuCategory category in _categories) {
+        if (category.id == previousId) {
+          selected = category;
+          break;
+        }
+      }
+    }
+    selected ??= _categories.isEmpty ? null : _categories.first;
+    _selectedCategory = selected;
+
+    if (selected == null) {
+      _items = const <MenuItem>[];
+      notifyListeners();
+      return;
+    }
+
+    final int request = ++_itemsRequest;
+    final Result<List<MenuItem>> items = await _menuRepository.loadItems(
+      categoryId: selected.id,
+    );
+
+    if (request != _itemsRequest) {
+      return;
+    }
+
+    _items = items.fold<List<MenuItem>>(
+      onOk: List<MenuItem>.unmodifiable,
+      onErr: (AppFailure failure) {
+        _recordFailure(failure);
+        return _items;
+      },
+    );
+    notifyListeners();
+  }
+
   /// Loads the categories and the items of the first one.
   ///
   /// Also the retry path: the error state calls this again. Safe to call twice.

@@ -83,17 +83,47 @@ class SalesSummaryView extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                _AmountRow(label: 'Subtotal', amount: summary.subtotal),
-                if (!summary.discountTotal.isZero)
-                  _AmountRow(label: 'Discount', amount: -summary.discountTotal),
-                if (!summary.taxTotal.isZero)
-                  _AmountRow(label: 'Tax', amount: summary.taxTotal),
+                _AmountRow(label: 'Sales subtotal', amount: summary.subtotal),
+                if (summary.hasDiscounts)
+                  _AmountRow(
+                    label: 'Discounts',
+                    amount: -summary.discountTotal,
+                  ),
+                // What the GST was charged on, stated only when a discount moved it away
+                // from the subtotal above. Otherwise it is the same figure twice.
+                if (summary.hasDiscounts && summary.hasTax)
+                  _AmountRow(
+                    label: 'Taxable sales',
+                    amount: summary.taxableSales,
+                  ),
+                // One GST figure in the block, because the block's rows have to add up to
+                // the gross beneath them and a CGST row beside an SGST row beside a GST row
+                // would appear to be counted three times. The halves are stated below as a
+                // caption instead, which is where they belong: they are a breakdown of this
+                // figure, not further additions to it.
+                if (summary.hasTax) ...<Widget>[
+                  _AmountRow(label: 'GST', amount: summary.taxTotal),
+                ],
                 const Divider(height: 20),
                 _AmountRow(
                   label: 'Sales',
                   amount: summary.grossSales,
                   emphasise: true,
                 ),
+                // The GST split, as a note rather than as two more rows. Allocated from the
+                // figure above so the two halves always come to exactly it.
+                if (summary.hasTax)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, bottom: 4),
+                    child: Text(
+                      'GST above is CGST ${summary.cgstTotal.formatted} and '
+                      'SGST ${summary.sgstTotal.formatted}. Each bill was taxed '
+                      'at the rate in force when it was settled.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
                 // The sale and its reversal are two facts, so they are two lines. The bill
                 // stays counted at what it was rung up for and the refund is subtracted
                 // below it, which is what keeps the gross figure reconcilable against the

@@ -17,12 +17,15 @@ import 'package:brisko_billing/features/payments/domain/models/refund_request.da
 import 'package:brisko_billing/features/payments/domain/models/refundable_bill.dart';
 import 'package:brisko_billing/features/payments/domain/repositories/payment_repository.dart';
 import 'package:brisko_billing/features/payments/domain/repositories/refund_repository.dart';
+import 'package:brisko_billing/features/printing/data/printers/unconfigured_thermal_printer.dart';
+import 'package:brisko_billing/features/printing/domain/services/print_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import '../helpers/seeded_sales.dart';
 import '../helpers/test_database.dart';
+import '../helpers/test_printing.dart';
 
 /// Refunding from the stored-bill dialog, driven by tapping.
 ///
@@ -124,6 +127,13 @@ void main() {
           Provider<PaymentRepository>.value(value: payments),
           Provider<CustomerRepository>.value(value: customers),
           Provider<RefundRepository>.value(value: refundRepository ?? refunds),
+          // Read by the reprint actions on the stored-bill dialog.
+          Provider<PrintService>.value(
+            value: TestPrinting.serviceOver(
+              database,
+              printer: UnconfiguredThermalPrinter(),
+            ),
+          ),
         ],
         child: MaterialApp(
           theme: AppTheme.light(),

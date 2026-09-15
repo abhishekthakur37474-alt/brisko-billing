@@ -26,6 +26,17 @@ dependencies:
   # Used only to build the database file path.
   path: 1.9.1
 
+  # Windows RAW printing. Thin, actively maintained FFI bindings to the Win32 print
+  # spooler (OpenPrinter/StartDocPrinter/WritePrinter/...), used on Windows only to hand
+  # the ESC/POS bytes to the OS print queue with the RAW datatype. Pure Dart with lazy
+  # DLL loading, so it compiles on macOS without pulling in any native build step and is
+  # never invoked off Windows. The macOS transport uses the CUPS command-line tools and
+  # needs no package at all.
+  win32: ^5.5.4
+  # Utf16 helpers and calloc for the Win32 FFI structs. Already present transitively; a
+  # direct dependency because the Windows transport imports it directly.
+  ffi: ^2.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -41,6 +52,9 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # Assets are added here as the application grows, for example:
-  # assets:
-  #   - assets/images/
+  # Bundled images. The outlet logo (assets/images/brisko_logo.png) is picked up from
+  # here and printed at the top of receipts; see lib/app/receipt_logo.dart. Declaring
+  # the directory means the logo is bundled the moment the file is dropped in, with no
+  # further pubspec change.
+  assets:
+    - assets/images/

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/money/money_display.dart';
 import '../../../customers/domain/models/customer.dart';
 import '../../../customers/domain/models/customer_phone.dart';
 import '../../../orders/domain/models/order_type.dart';
+import '../../domain/models/bill_discount.dart';
 import '../controllers/checkout_controller.dart';
 
 /// First step: confirm how the order reaches the customer, and who they are.
@@ -40,10 +43,196 @@ class CheckoutReviewStep extends StatelessWidget {
         const SizedBox(height: 8),
         const _CustomerPhoneField(),
         const SizedBox(height: 24),
+        const _DiscountControl(),
+        const SizedBox(height: 24),
         Text('Note on the bill', style: theme.textTheme.titleSmall),
         const SizedBox(height: 8),
         const _NotesField(),
       ],
+    );
+  }
+}
+
+/// Bill-level discount: whether there is one, how it is expressed, and how much.
+///
+/// ## Why it is here
+///
+/// A discount is a decision about one bill, taken as it is settled, so it belongs on the
+/// step where the bill is reviewed rather than on the menu screen. The figures it moves —
+/// subtotal, discount, taxable amount, GST, total — are all on the bill summary beside this
+/// step, updating as the value is typed, so the cashier can see what they are giving away
+/// before taking any money.
+///
+/// ## Closed by default
+///
+/// Most bills carry no discount, so the control is a switch with nothing behind it until it
+/// is turned on. Turning it off removes the discount rather than hiding it: a reduction on a
+/// bill with nothing on screen explaining it is the one state this must never be in.
+///
+/// ## Nothing is calculated here
+///
+/// The field reports each keystroke to the controller, which parses it once and rebuilds the
+/// money block through `BillTotals`. This widget reads back the amount and the problem
+/// message. There is no arithmetic and no parsing in this file.
+class _DiscountControl extends StatelessWidget {
+  const _DiscountControl();
+
+  @override
+  Widget build(BuildContext context) {
+    final CheckoutController controller = context.watch<CheckoutController>();
+    final ThemeData theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Text('Discount', style: theme.textTheme.titleSmall),
+            const Spacer(),
+            Switch(
+              value: controller.isDiscountOpen,
+              onChanged: (bool isOpen) => context
+                  .read<CheckoutController>()
+                  .setDiscountOpen(isOpen: isOpen),
+            ),
+          ],
+        ),
+        if (!controller.isDiscountOpen)
+          Text(
+            'No discount on this bill.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          )
+        else ...<Widget>[
+          const SizedBox(height: 8),
+          SegmentedButton<BillDiscountType>(
+            segments: <ButtonSegment<BillDiscountType>>[
+              for (final BillDiscountType type in BillDiscountType.values)
+                ButtonSegment<BillDiscountType>(
+                  value: type,
+                  label: Text('${type.label} ${type.unit}'),
+                ),
+            ],
+            selected: <BillDiscountType>{controller.discountType},
+            onSelectionChanged: (Set<BillDiscountType> selection) => context
+                .read<CheckoutController>()
+                .selectDiscountType(selection.first),
+          ),
+          const SizedBox(height: 12),
+          const _DiscountField(),
+          const SizedBox(height: 8),
+          _DiscountEffect(controller: controller),
+        ],
+      ],
+    );
+  }
+}
+
+/// Says what the discount currently entered is taking off, in rupees.
+///
+/// A percentage is not a figure anybody can check at a glance, so the amount it comes to is
+/// stated outright. Read from the totals the controller calculated, never worked out here.
+class _DiscountEffect extends StatelessWidget {
+  const _DiscountEffect({required this.controller});
+
+  final CheckoutController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    if (!controller.hasDiscount) {
+      return Text(
+        'Nothing is taken off yet.',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+
+    final String taxNote = controller.isTaxCharged
+        ? ' GST is then charged on '
+              '${controller.totals.taxableAmount.formatted}.'
+        : '';
+
+    return Text(
+      '${controller.discountRuleLabel} off: '
+      '${controller.totals.discount.formatted}.$taxNote',
+      style: theme.textTheme.bodySmall?.copyWith(
+        color: theme.colorScheme.primary,
+      ),
+    );
+  }
+}
+
+/// The discount value, held by the controller and echoed here.
+///
+/// Digits and one decimal point are all the field accepts, so a letter or a second point
+/// cannot reach the parser. Whether what is left amounts to a discount this bill can carry
+/// is the controller's answer, shown as the error text.
+class _DiscountField extends StatefulWidget {
+  const _DiscountField();
+
+  @override
+  State<_DiscountField> createState() => _DiscountFieldState();
+}
+
+class _DiscountFieldState extends State<_DiscountField> {
+  late final TextEditingController _field;
+
+  @override
+  void initState() {
+    super.initState();
+    _field = TextEditingController(
+      text: context.read<CheckoutController>().discountEntry,
+    );
+  }
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final CheckoutController controller = context.watch<CheckoutController>();
+
+    // The controller is the source of truth. It clears the entry when the rule changes or
+    // the discount is removed, so the field is corrected back to what it actually holds.
+    if (_field.text != controller.discountEntry) {
+      _field.value = TextEditingValue(
+        text: controller.discountEntry,
+        selection: TextSelection.collapsed(
+          offset: controller.discountEntry.length,
+        ),
+      );
+    }
+
+    final bool isPercentage =
+        controller.discountType == BillDiscountType.percentage;
+
+    return TextField(
+      controller: _field,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: <TextInputFormatter>[
+        // Digits and at most one decimal point. Not a validation — the controller still
+        // refuses anything that is not a discount — but it keeps the field from holding
+        // characters that could never become one.
+        FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
+      ],
+      decoration: InputDecoration(
+        labelText: isPercentage ? 'Discount percentage' : 'Discount amount',
+        hintText: isPercentage ? '10' : '100',
+        prefixText: isPercentage ? null : '\u20B9 ',
+        suffixText: isPercentage ? '%' : null,
+        errorText: controller.discountProblem,
+        helperText: isPercentage
+            ? 'Taken off the subtotal. Up to 100%.'
+            : 'Taken off the subtotal. No more than the subtotal itself.',
+      ),
+      onChanged: context.read<CheckoutController>().editDiscount,
     );
   }
 }

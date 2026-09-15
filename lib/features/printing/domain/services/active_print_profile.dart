@@ -48,4 +48,16 @@ abstract interface class ActivePrintProfile {
   /// to the controller that owns the form, so that a refusal reaches the operator as a
   /// message beside the field rather than as a silently ignored change.
   void apply(PrintSettings settings);
+
+  /// Lays documents out for a printer with [capabilities] from now on.
+  ///
+  /// Called when the terminal is bound to a different printer, which is the only way the
+  /// paper under a document can change. It exists because [capabilities] is otherwise the
+  /// one thing here that was fixed at start-up, and a roll width chosen in the printer
+  /// section that did not reach the encoder would produce documents laid out for paper the
+  /// printer does not have.
+  ///
+  /// Layout choices are kept where they still fit the new printer and dropped where they
+  /// do not, because a column count wider than the paper truncates rather than wraps.
+  void retargetTo(PrinterCapabilities capabilities);
 }

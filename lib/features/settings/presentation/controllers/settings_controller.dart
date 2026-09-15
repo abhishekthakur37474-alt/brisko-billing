@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../core/error/app_failure.dart';
 import '../../../../core/utils/result.dart';
+import '../../../billing/domain/models/gst_rate.dart';
 import '../../../orders/domain/models/order_type.dart';
 import '../../../printing/domain/models/print_profile.dart';
 import '../../../printing/domain/models/print_settings.dart';
@@ -55,10 +56,14 @@ enum SettingsStatus {
 ///
 /// ## No money, and no printer
 ///
-/// There is no amount, tax rate or discount anywhere in this file. Settings cannot
-/// change what a bill charges; it changes what the paper says around the figures, and
-/// how that paper is laid out. There is also no connection, no address and no device:
-/// choosing a printer's layout does not claim that a printer is attached.
+/// There is no amount and no discount anywhere in this file, and nothing here constructs
+/// one. The GST rate is the only value on this screen that a bill's arithmetic reads, and
+/// it is an integer count of basis points chosen from a list — not an amount, not typed,
+/// and not parseable into a wrong number. It reaches a bill only through `BillTotals`, and
+/// only a bill settled after it is saved.
+///
+/// There is also no connection, no address and no device: choosing a printer's layout does
+/// not claim that a printer is attached.
 class SettingsController extends ChangeNotifier {
   SettingsController({
     required this._settings,
@@ -97,9 +102,14 @@ class SettingsController extends ChangeNotifier {
   String _gstin = '';
   String _receiptHeader = '';
   String _receiptFooter = '';
+  String _feedbackUrl = '';
   String _upiVpa = '';
   String _upiPayeeName = '';
   OrderType _defaultOrderType = PosSettings.fallbackOrderType;
+
+  // A choice from a fixed list, not a typed value, so there is no draft text to validate
+  // and no way to save a rate nobody meant.
+  GstRate _gstRate = GstRate.zero;
 
   // Printer layout. The three numeric values are held as text so that "not a number"
   // is a message beside the field rather than a silently discarded keystroke.
@@ -159,11 +169,16 @@ class SettingsController extends ChangeNotifier {
 
   String get receiptFooter => _receiptFooter;
 
+  String get feedbackUrl => _feedbackUrl;
+
   String get upiVpa => _upiVpa;
 
   String get upiPayeeName => _upiPayeeName;
 
   OrderType get defaultOrderType => _defaultOrderType;
+
+  /// The GST rate new bills will be charged at once this form is saved.
+  GstRate get gstRate => _gstRate;
 
   PrinterFont get font => _font;
 
@@ -317,6 +332,9 @@ class SettingsController extends ChangeNotifier {
   void editReceiptFooter(String value) =>
       _edit(() => _receiptFooter = value, from: _receiptFooter, to: value);
 
+  void editFeedbackUrl(String value) =>
+      _edit(() => _feedbackUrl = value, from: _feedbackUrl, to: value);
+
   void editUpiVpa(String value) =>
       _edit(() => _upiVpa = value, from: _upiVpa, to: value);
 
@@ -325,6 +343,18 @@ class SettingsController extends ChangeNotifier {
 
   void selectDefaultOrderType(OrderType type) =>
       _edit(() => _defaultOrderType = type, from: _defaultOrderType, to: type);
+
+  /// Chooses the GST rate for bills settled after the next save.
+  ///
+  /// Ignores a rate outside 0–100%, which nothing on the screen can offer. Bills already
+  /// settled are untouched whatever is chosen here: each one carries the rate it was
+  /// charged at.
+  void selectGstRate(GstRate rate) {
+    if (!rate.isAcceptable) {
+      return;
+    }
+    _edit(() => _gstRate = rate, from: _gstRate, to: rate);
+  }
 
   void selectFont(PrinterFont font) =>
       _edit(() => _font = font, from: _font, to: font);
@@ -443,9 +473,11 @@ class SettingsController extends ChangeNotifier {
     gstin: _isBlank(_gstin) ? null : Gstin.tryNormalise(_gstin),
     receiptHeader: _stored(_receiptHeader),
     receiptFooter: _stored(_receiptFooter),
+    feedbackUrl: _stored(_feedbackUrl),
     upiVpa: _stored(_upiVpa),
     upiPayeeName: _stored(_upiPayeeName),
     defaultOrderType: _defaultOrderType,
+    gstRate: _gstRate,
   );
 
   /// The printer half of the form, or `null` when a number cannot be read.
@@ -484,9 +516,11 @@ class SettingsController extends ChangeNotifier {
     _gstin = _saved.gstin ?? '';
     _receiptHeader = _saved.receiptHeader ?? '';
     _receiptFooter = _saved.receiptFooter ?? '';
+    _feedbackUrl = _saved.feedbackUrl ?? '';
     _upiVpa = _saved.upiVpa ?? '';
     _upiPayeeName = _saved.upiPayeeName ?? '';
     _defaultOrderType = _saved.defaultOrderType;
+    _gstRate = _saved.gstRate;
 
     _font = _savedPrint.font;
     _columnOverride = _savedPrint.columnOverride?.toString() ?? '';

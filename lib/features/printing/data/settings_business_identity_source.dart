@@ -3,6 +3,7 @@ import '../../../core/utils/result.dart';
 import '../../settings/domain/models/setting_keys.dart';
 import '../../settings/domain/repositories/settings_repository.dart';
 import '../domain/models/business_identity.dart';
+import '../domain/models/monochrome_bitmap.dart';
 
 /// Reads the outlet's printed details out of settings.
 ///
@@ -21,9 +22,18 @@ import '../domain/models/business_identity.dart';
 /// or a UPI address: those are legal and financial identifiers, and a plausible-looking
 /// placeholder is far more dangerous than a blank line.
 class SettingsBusinessIdentitySource {
-  const SettingsBusinessIdentitySource({required this.settings});
+  const SettingsBusinessIdentitySource({required this.settings, this.logo});
 
   final SettingsRepository settings;
+
+  /// The outlet logo to stamp on every receipt, already reduced to printable dots, or
+  /// `null` when none is bundled.
+  ///
+  /// Supplied once at start-up. It is not a setting the operator types; it is an asset
+  /// decoded by the app layer, where an image codec is available, and handed down here
+  /// so the pure printing pipeline receives only finished bits. A build without the
+  /// logo asset passes `null`, and the receipt prints a header with just the name.
+  final MonochromeBitmap? logo;
 
   /// The outlet's details as currently configured.
   ///
@@ -40,6 +50,8 @@ class SettingsBusinessIdentitySource {
       gstin: await _read(SettingKeys.gstin),
       receiptHeader: await _read(SettingKeys.receiptHeader),
       receiptFooter: await _read(SettingKeys.receiptFooter),
+      feedbackUrl: await _read(SettingKeys.feedbackUrl),
+      logo: logo,
     );
   }
 

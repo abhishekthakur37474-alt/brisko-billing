@@ -16,9 +16,21 @@
 /// cannot become uncooked, and letting the state go backwards would only ever hide
 /// a mistake rather than correct one.
 ///
-/// [printed] belongs to the printing module, which does not exist yet. [completed]
-/// and [cancelled] are the terminal states an order-level action will set. None of
-/// the three is reachable from the kitchen board.
+/// [completed] and [cancelled] are the terminal states an order-level action will
+/// set. Neither is reachable from the kitchen board.
+///
+/// ## Why printing does not move a slip
+///
+/// [printed] exists in this vocabulary and the printing module deliberately never
+/// sets it. It is not [isActive], so writing it when a slip came out of the printer
+/// would take that slip off the kitchen board — at the exact moment the paper reached
+/// the pass and the food had not been started. On an outlet with one printer and no
+/// kitchen screen, the board *is* the kitchen's list of outstanding work, and paper is
+/// a copy of it rather than a replacement for it.
+///
+/// So printing reads kitchen tickets and writes none. A slip can be reprinted any
+/// number of times without moving, which is also what makes a reprint safe: there is
+/// no code path from the printer back into these rows. See `PrintService`.
 enum KotStatus {
   /// Raised and waiting. The kitchen has not started on it.
   pending,
@@ -29,8 +41,10 @@ enum KotStatus {
   /// Cooked and waiting to be handed over.
   ready,
 
-  /// A paper slip was produced on the shared thermal printer. Set by the printing
-  /// module, which is not implemented.
+  /// A paper slip was produced on the shared thermal printer.
+  ///
+  /// Never set by this build. Printing a slip does not change where it stands in the
+  /// kitchen, and moving it here would take it off the board. See the note above.
   printed,
 
   completed,

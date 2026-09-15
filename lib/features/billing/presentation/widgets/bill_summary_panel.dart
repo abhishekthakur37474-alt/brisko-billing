@@ -128,6 +128,17 @@ class _TotalsBlock extends StatelessWidget {
 
   final BillTotals totals;
 
+  /// `CGST 9%`, or plain `CGST` when the rate is unknown or does not halve into a whole
+  /// basis point.
+  ///
+  /// The rate is never stated unless it multiplies out exactly to the figure beside it.
+  static String _halfLabel(String tax, BillTotals totals) {
+    final String? half = totals.taxRate.isCharged
+        ? totals.taxRate.halfLabel
+        : null;
+    return half == null ? tax : '$tax $half';
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -142,19 +153,38 @@ class _TotalsBlock extends StatelessWidget {
             amount: totals.subtotal.formatted,
             style: theme.textTheme.bodyMedium,
           ),
-          // Shown only when there is something to show. A row of zeroes would imply
-          // a discount scheme and a tax rate that this build does not have.
-          if (totals.hasAdjustments) ...<Widget>[
+          // Each row appears only when it says something. The same rule the printed bill
+          // follows, so the screen the cashier confirms and the paper the customer keeps
+          // show the same lines.
+          if (totals.hasDiscount) ...<Widget>[
             const SizedBox(height: 4),
             _AmountRow(
-              label: 'Discount',
+              label: totals.discountRule.isNone
+                  ? 'Discount'
+                  : 'Discount (${totals.discountRule.label})',
               amount: '-${totals.discount.formatted}',
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+          if (totals.showsTaxableAmount) ...<Widget>[
+            const SizedBox(height: 4),
+            _AmountRow(
+              label: 'Taxable amount',
+              amount: totals.taxableAmount.formatted,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+          if (totals.hasTax) ...<Widget>[
+            const SizedBox(height: 4),
+            _AmountRow(
+              label: _halfLabel('CGST', totals),
+              amount: totals.cgst.formatted,
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 4),
             _AmountRow(
-              label: 'Tax',
-              amount: totals.tax.formatted,
+              label: _halfLabel('SGST', totals),
+              amount: totals.sgst.formatted,
               style: theme.textTheme.bodyMedium,
             ),
           ],
@@ -172,7 +202,9 @@ class _TotalsBlock extends StatelessWidget {
           if (!totals.hasAdjustments) ...<Widget>[
             const SizedBox(height: 6),
             Text(
-              'No discount or tax is applied. Neither is configured yet.',
+              totals.taxRate.isZero
+                  ? 'No GST is configured, so this bill is not taxed.'
+                  : 'No discount is applied.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -203,11 +235,18 @@ class _AmountRow extends StatelessWidget {
 
     return Row(
       children: <Widget>[
-        Text(
-          label,
-          style: style?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        // The label yields, the amount never does. A label can now be as long as
+        // `Discount (₹1,000.00)` or `Taxable amount`, and on a narrow panel the row has to
+        // give somewhere — but an amount that got ellipsised or pushed off the edge would be
+        // a figure the cashier cannot read on the screen they are confirming.
+        Expanded(
+          child: Text(
+            label,
+            style: style?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-        const Spacer(),
+        const SizedBox(width: 8),
         Text(amount, style: style),
       ],
     );

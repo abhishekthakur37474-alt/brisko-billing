@@ -3,6 +3,7 @@ import 'package:brisko_billing/core/money/money.dart';
 import 'package:brisko_billing/core/utils/result.dart';
 import 'package:brisko_billing/features/orders/domain/models/order_status.dart';
 import 'package:brisko_billing/features/payments/domain/models/payment_method.dart';
+import 'package:brisko_billing/features/reports/domain/models/bill_search_query.dart';
 import 'package:brisko_billing/features/reports/domain/models/date_range.dart';
 import 'package:brisko_billing/features/reports/domain/models/item_sales_row.dart';
 import 'package:brisko_billing/features/reports/domain/models/payment_mix.dart';
@@ -358,6 +359,17 @@ class _StubReportRepository implements SalesReportRepository {
     int limit = 200,
   }) async {
     billRanges.add(range);
+    final AppFailure? failure = failBills;
+    return failure == null
+        ? Ok<List<SalesBill>>(bills)
+        : Err<List<SalesBill>>(failure);
+  }
+
+  @override
+  Future<Result<List<SalesBill>>> searchBills(
+    BillSearchQuery query, {
+    int limit = 100,
+  }) async {
     final AppFailure? failure = failBills;
     return failure == null
         ? Ok<List<SalesBill>>(bills)

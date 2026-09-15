@@ -32,8 +32,15 @@ void main() {
     testWidgets('starts on the dashboard section', (WidgetTester tester) async {
       await tester.pumpWidget(BriskoApp(dependencies: dependencies));
 
-      // Title in the app bar, plus the heading rendered by the placeholder.
+      // Title in the app bar, plus the section heading.
       expect(find.text(PosSection.dashboard.label), findsWidgets);
+
+      // The dashboard reads the database when shown; let that I/O settle so no sqflite
+      // timer outlives the widget tree at teardown.
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
     });
 
     testWidgets('navigating the rail swaps the active section', (
@@ -53,6 +60,14 @@ void main() {
 
       expect(find.text(PosSection.reports.label), findsWidgets);
       expect(find.text(PosSection.dashboard.label), findsOneWidget);
+
+      // The dashboard is the landing section and reads the database when shown, as does
+      // the reports screen. Let that I/O settle so no sqflite timer outlives the widget
+      // tree when the test tears down.
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
     });
   });
 }

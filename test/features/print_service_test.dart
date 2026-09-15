@@ -237,24 +237,26 @@ void main() {
       expect(receipt.qrPayloads, isEmpty);
     });
 
-    test('a configured UPI address produces the payment QR', () async {
-      await settings.writeString(SettingKeys.upiVpa, 'briskopizza@upi');
-      await settings.writeString(SettingKeys.upiPayeeName, 'Brisko Pizza');
+    test('a configured feedback URL produces the review QR', () async {
+      await settings.writeString(
+        SettingKeys.feedbackUrl,
+        'https://g.page/r/brisko/review',
+      );
 
       final Order order = await sellPizza();
       await printing.printSale(order.id);
 
       final EscPosTranscript receipt = documentAt(1);
-      final String payload = receipt.qrPayloads.single;
-      expect(payload, contains('pa=briskopizza%40upi'));
-      expect(payload, contains('am=320.00'));
-      expect(payload, contains('tr=${order.orderNumber}'));
+      // The QR carries exactly the configured review URL — never a payment string.
+      expect(receipt.qrPayloads.single, 'https://g.page/r/brisko/review');
+      expect(receipt.hasLineContaining('RATE US'), isTrue);
+      expect(receipt.text, isNot(contains('Scan to pay')));
       // And never on the kitchen slip.
       expect(documentAt(0).qrPayloads, isEmpty);
     });
 
-    test('a blank UPI setting is treated as unconfigured', () async {
-      await settings.writeString(SettingKeys.upiVpa, '   ');
+    test('a blank feedback URL is treated as unconfigured', () async {
+      await settings.writeString(SettingKeys.feedbackUrl, '   ');
 
       final Order order = await sellPizza();
       await printing.printSale(order.id);

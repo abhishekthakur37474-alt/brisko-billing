@@ -127,6 +127,7 @@ class PrintProfile {
     this.columnOverride,
     this.cut = PrintCut.full,
     this.canPrintQrCode = true,
+    this.canPrintGraphics = true,
     this.optionIndent = 2,
     this.feedLinesBeforeCut = 4,
     this.qrModuleSize = 6,
@@ -152,6 +153,7 @@ class PrintProfile {
       columnOverride: columnOverride,
       cut: capabilities.hasAutoCutter ? PrintCut.full : PrintCut.none,
       canPrintQrCode: capabilities.supportsQrCode,
+      canPrintGraphics: capabilities.supportsGraphics,
     );
   }
 
@@ -180,6 +182,13 @@ class PrintProfile {
   /// False suppresses the receipt's payment block entirely. A half-printed QR is worse
   /// than none: it would scan to a corrupted payment URI.
   final bool canPrintQrCode;
+
+  /// True when the printer has a raster graphics mode, which a bitmap logo needs.
+  ///
+  /// False suppresses the receipt's logo entirely, the same way [canPrintQrCode]
+  /// suppresses the QR: a printer with no graphics mode gets a header with no logo
+  /// rather than a run of raster bytes printed as text.
+  final bool canPrintGraphics;
 
   /// Spaces an option or a note is indented beneath its item.
   final int optionIndent;
@@ -219,6 +228,7 @@ class PrintProfile {
     int? columnOverride,
     PrintCut? cut,
     bool? canPrintQrCode,
+    bool? canPrintGraphics,
     int? optionIndent,
     int? feedLinesBeforeCut,
     int? qrModuleSize,
@@ -235,6 +245,7 @@ class PrintProfile {
           : columnOverride ?? this.columnOverride,
       cut: cut ?? this.cut,
       canPrintQrCode: canPrintQrCode ?? this.canPrintQrCode,
+      canPrintGraphics: canPrintGraphics ?? this.canPrintGraphics,
       optionIndent: optionIndent ?? this.optionIndent,
       feedLinesBeforeCut: feedLinesBeforeCut ?? this.feedLinesBeforeCut,
       qrModuleSize: qrModuleSize ?? this.qrModuleSize,

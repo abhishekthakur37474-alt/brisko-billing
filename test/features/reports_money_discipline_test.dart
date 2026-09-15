@@ -37,11 +37,13 @@ void main() {
     'lib/features/reports/domain/models/payment_mix.dart',
     'lib/features/reports/domain/models/item_sales_row.dart',
     'lib/features/reports/domain/models/sales_bill.dart',
+    'lib/features/reports/domain/models/bill_search_query.dart',
     'lib/features/reports/domain/repositories/sales_report_repository.dart',
     // Data
     'lib/features/reports/data/repositories/sqlite_sales_report_repository.dart',
-    // Controller
+    // Controllers
     'lib/features/reports/presentation/controllers/sales_report_controller.dart',
+    'lib/features/reports/presentation/controllers/order_history_controller.dart',
   ];
 
   /// The files that render a report.
@@ -53,6 +55,7 @@ void main() {
   /// `double` never appears on a line that touches money.
   const List<String> viewPath = <String>[
     'lib/features/reports/presentation/screens/reports_screen.dart',
+    'lib/features/reports/presentation/screens/order_history_screen.dart',
     'lib/features/reports/presentation/report_section.dart',
     'lib/features/reports/presentation/widgets/report_filter_bar.dart',
     'lib/features/reports/presentation/widgets/report_notices.dart',

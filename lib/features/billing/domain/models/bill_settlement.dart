@@ -6,11 +6,13 @@ import '../../../orders/domain/models/order_item_option.dart';
 import '../../../orders/domain/models/order_type.dart';
 import '../../../payments/domain/models/payment.dart';
 import '../../../payments/domain/models/payment_method.dart';
+import 'bill_discount.dart';
 import 'bill_totals.dart';
 import 'cart.dart';
 import 'cart_line.dart';
 import 'cart_line_option.dart';
 import 'checkout_transition.dart';
+import 'gst_rate.dart';
 
 /// A bill the cashier has confirmed, as the exact rows that will be written.
 ///
@@ -69,10 +71,16 @@ class BillSettlement {
   ///
   /// [at] is the settlement instant, injected so a test can pin it. It becomes
   /// `createdAt` on every row, which is what orders them on a reprint.
+  ///
+  /// [discount] and [taxRate] go through `BillTotals.forCart`, which is the one place the
+  /// bill arithmetic happens. They default to nothing, so a caller that settles a plain
+  /// bill gets exactly what this factory has always produced.
   factory BillSettlement.fromCart({
     required Cart cart,
     required OrderType orderType,
     required PaymentMethod paymentMethod,
+    BillDiscount discount = BillDiscount.none,
+    GstRate taxRate = GstRate.zero,
     String? customerPhone,
     String? reference,
     String? notes,
@@ -80,7 +88,14 @@ class BillSettlement {
   }) {
     final DateTime createdAt = (at ?? DateTime.now()).toUtc();
     final String orderId = EntityId.generate(prefix: 'ord');
-    final BillTotals totals = BillTotals.fromCart(cart);
+    // Recomputed from the cart rather than taken from the caller, so the rows written
+    // cannot differ from the arithmetic the counter was shown. The controller holds the
+    // same value, built the same way, from the same immutable cart.
+    final BillTotals totals = BillTotals.forCart(
+      cart: cart,
+      discount: discount,
+      taxRate: taxRate,
+    );
 
     final List<OrderItem> items = <OrderItem>[];
     final List<OrderItemOption> itemOptions = <OrderItemOption>[];
@@ -194,6 +209,22 @@ class BillSettlement {
   /// says ₹300 would make every sales figure derived from either one wrong.
   bool get isBalanced => payment.amount == totals.total;
 
+  /// True when the money block on this bill adds up and nothing in it is negative.
+  ///
+  /// Holds by construction for anything built through [BillSettlement.fromCart], because
+  /// `BillTotals.of` clamps the discount and derives the total. It is asserted anyway,
+  /// immediately before the write, because this is the last moment a wrong figure can be
+  /// stopped: once the row is committed it is the historical record, and a bill whose
+  /// subtotal, discount and tax do not come to its total cannot be explained to the
+  /// customer holding it or to anyone reconciling the till.
+  bool get isArithmeticSound =>
+      totals.isConsistent &&
+      !totals.discount.isNegative &&
+      !totals.tax.isNegative &&
+      !totals.taxableAmount.isNegative &&
+      !totals.total.isNegative &&
+      totals.discount <= totals.subtotal;
+
   /// Builds the order header once the number and the customer are known.
   ///
   /// Both arguments come from inside the settlement transaction: [orderNumber] from the
@@ -211,6 +242,15 @@ class BillSettlement {
       discountAmount: totals.discount,
       taxAmount: totals.tax,
       totalAmount: totals.total,
+      // The rate in force at this moment, copied onto the bill. Nothing reads it back out
+      // of Settings afterwards, which is what stops a later slab change from restating a
+      // bill that has already been issued.
+      taxRateBasisPoints: totals.taxRate.basisPoints,
+      // The rule, recorded only when it actually took something off. A bill with no
+      // discount stores no rule rather than storing a rule worth nothing, so the two stay
+      // distinguishable on a reprint.
+      discountType: totals.hasDiscount ? totals.discountRule.type.name : null,
+      discountValue: totals.hasDiscount ? totals.discountRule.storedValue : 0,
       notes: notes,
       createdAt: createdAt,
       updatedAt: createdAt,

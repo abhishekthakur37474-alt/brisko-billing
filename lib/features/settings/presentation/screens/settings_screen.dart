@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../printing/domain/printers/active_printer.dart';
 import '../../../printing/domain/services/active_print_profile.dart';
+import '../../../printing/domain/services/print_service.dart';
+import '../../../printing/presentation/controllers/printer_controller.dart';
 import '../../domain/active_pos_settings.dart';
 import '../../domain/repositories/settings_repository.dart';
 import '../controllers/settings_controller.dart';
@@ -14,39 +17,61 @@ import '../widgets/settings_notices.dart';
 ///
 /// ## What is here, and what is deliberately not
 ///
-/// Four sections: who the outlet is, how settlement opens, what the bill says around the
-/// figures, and how a document is laid out on the roll. Every one of them is verifiable
-/// on this terminal today.
+/// Five sections: who the outlet is, how settlement opens, what the bill says around the
+/// figures, how a document is laid out on the roll, and which printer it is sent to. Every
+/// one of them is verifiable on this terminal today.
 ///
-/// There is no printer address, no USB device, no network host and no pairing, because no
-/// transport exists yet and a field to type an IP address into would say one does. There
-/// is no tax rate and no discount, because nothing in this build charges either and an
-/// input that changes nothing is worse than no input. There is no sync trigger, no
+/// The printer section is supplied by the printing module rather than written here. It is
+/// that module's knowledge — a transport, an endpoint, a connection state and a test page
+/// — and keeping it there is what lets this module stay free of devices, sockets and
+/// addresses while the screen still offers somewhere to configure one.
+///
+/// There is no tax rate and no discount, because nothing in this build charges either and
+/// an input that changes nothing is worse than no input. There is no sync trigger, no
 /// account and no backup, for the same reason.
 ///
 /// ## How it is wired
 ///
-/// The screen builds a [SettingsController] over the settings repository, the in-memory
-/// configuration and the active print profile, and starts the read. Everything below is
-/// widgets reporting what the operator did. No widget on this screen touches SQLite, and
-/// no widget decides whether a value is acceptable.
+/// Two controllers, because there are two things being configured. [SettingsController]
+/// owns the outlet's configuration and the document layout, saved together in one
+/// transaction because they are one document. [PrinterController] owns the device binding,
+/// saved on its own and testable on its own, because a corrected printer address has to be
+/// tryable without also committing whatever is half-typed in the business fields.
+///
+/// Everything below is widgets reporting what the operator did. No widget on this screen
+/// touches SQLite, and no widget decides whether a value is acceptable.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<SettingsController>(
-      create: (BuildContext context) {
-        final SettingsController controller = SettingsController(
-          settings: context.read<SettingsRepository>(),
-          printProfile: context.read<ActivePrintProfile>(),
-          activeSettings: context.read<ActivePosSettings>(),
-        );
-        // Deliberately not awaited: the first frame renders the loading state while the
-        // read runs.
-        unawaited(controller.load());
-        return controller;
-      },
+    return MultiProvider(
+      providers: <ChangeNotifierProvider<ChangeNotifier>>[
+        ChangeNotifierProvider<SettingsController>(
+          create: (BuildContext context) {
+            final SettingsController controller = SettingsController(
+              settings: context.read<SettingsRepository>(),
+              printProfile: context.read<ActivePrintProfile>(),
+              activeSettings: context.read<ActivePosSettings>(),
+            );
+            // Deliberately not awaited: the first frame renders the loading state while
+            // the read runs.
+            unawaited(controller.load());
+            return controller;
+          },
+        ),
+        // Seeded from the printer the application is already using, which the bootstrap
+        // built from the stored rows before the first frame. No second read of the table,
+        // so the form cannot show a binding that differs from the one in force.
+        ChangeNotifierProvider<PrinterController>(
+          create: (BuildContext context) => PrinterController(
+            settings: context.read<SettingsRepository>(),
+            printer: context.read<ActivePrinter>(),
+            printService: context.read<PrintService>(),
+            printProfile: context.read<ActivePrintProfile>(),
+          ),
+        ),
+      ],
       child: const _SettingsView(),
     );
   }

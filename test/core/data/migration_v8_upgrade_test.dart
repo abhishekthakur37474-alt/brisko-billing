@@ -7,6 +7,7 @@ import 'package:brisko_billing/core/data/local/sqlite/migrations/m004_scoped_men
 import 'package:brisko_billing/core/data/local/sqlite/migrations/m005_kot_order_snapshots.dart';
 import 'package:brisko_billing/core/data/local/sqlite/migrations/m006_recipes_and_stock_deduction.dart';
 import 'package:brisko_billing/core/data/local/sqlite/migrations/m007_held_bills.dart';
+import 'package:brisko_billing/core/data/local/sqlite/migrations/m008_refunds.dart';
 import 'package:brisko_billing/core/data/local/sqlite/sqlite_database.dart';
 import 'package:brisko_billing/core/data/local/sqlite/sqlite_tables.dart';
 import 'package:brisko_billing/features/customers/data/repositories/sqlite_customer_repository.dart';
@@ -80,9 +81,13 @@ void main() {
     addTearDown(database.close);
 
     expect(await database.database.getVersion(), SqliteDatabase.schemaVersion);
-    // Refunds are v8, and the version is derived from the migration list rather than typed in
-    // twice, so this is what says the list grew.
-    expect(SqliteDatabase.schemaVersion, 8);
+    // Refunds are v8, and the migration states its own version rather than having it typed
+    // in twice, which is what pins this upgrade path to the migration it is about. The
+    // schema has since moved on — v9 added the GST rate and discount rule — so the current
+    // version is checked as "at least v8" and the exact figure is asserted where it belongs,
+    // in `migration_v9_upgrade_test.dart`.
+    expect(const M008Refunds().version, 8);
+    expect(SqliteDatabase.schemaVersion, greaterThanOrEqualTo(8));
   });
 
   test(

@@ -95,10 +95,59 @@ void main() {
       expect(controller, isNot(matches(RegExp(r'Money\.'))));
     });
 
-    test('no tax rate or discount is written by the settings screen', () {
-      // The keys exist in the table's vocabulary from step 1, but nothing in this build
-      // charges tax or gives a discount, so the screen does not offer to configure one.
-      // An input that changes no bill would be worse than no input.
+    test('the GST rate is configured here, and it is not an amount', () {
+      // This rule used to require the settings module to mention no tax rate at all. It was
+      // protecting something real — nothing here may decide a charge — but it stated it as
+      // "no rate", which was accurate only while no bill charged tax. Step 14 gives the
+      // outlet a GST rate to configure, so that sentence would now be false.
+      //
+      // What the rule was protecting is kept, and is now stated as what it actually means: a
+      // rate is an integer count of basis points, it is never an amount, and it reaches a
+      // bill through `BillTotals` rather than from here.
+      final String settings = DartSource.codeOf(
+        'lib/features/settings/domain/models/pos_settings.dart',
+      );
+
+      // The rate is stored under the key that has been in the table's vocabulary since
+      // step 1, rather than under a second one invented for it.
+      expect(settings, contains('gstRateBasisPoints'));
+      expect(settings, contains('GstRate'));
+
+      // And it is still not money. No paise, no amount, no arithmetic.
+      expect(settings, isNot(matches(RegExp(r'\bMoney\b'))));
+      expect(settings, isNot(matches(RegExp(r'Paise\b'))));
+      expect(settings, isNot(matches(RegExp(r'\bdouble\b'))));
+    });
+
+    test('no discount is configured by the settings screen', () {
+      // A discount is a decision about one bill, taken at the counter on the bill it applies
+      // to. A configured default discount would be a standing reduction nobody had agreed to
+      // on any particular sale, so there is nothing here to set one.
+      //
+      // Matched on identifiers rather than on the bare word: the GST section's help text
+      // explains that tax is charged on the subtotal after any discount, which is a true and
+      // useful sentence to put in front of an owner. What must not exist is a discount key,
+      // field, or domain type.
+      for (final String path in settingsPath) {
+        expectAbsent(
+          path,
+          const <String, String>{
+            'a discount setting key': r'SettingKeys\.\w*[Dd]iscount',
+            'a discount field or property': r'\b_?discount[A-Z_]\w*|\b[Dd]iscount(Rate|Value|Amount|Percent|Type)\b',
+            'the discount domain type': r'BillDiscount',
+            'a discount editor': r'(edit|select|set|apply)[Dd]iscount',
+          },
+          because:
+              'A discount belongs to a bill, not to the terminal. It is '
+              'entered on the checkout review step.',
+        );
+      }
+    });
+
+    test('tax-inclusive pricing has not been started', () {
+      // The key exists in the table's vocabulary from step 1 and nothing reads it. Menu
+      // prices are treated as pre-GST throughout, so a switch here would change no bill and
+      // would only invite the belief that it did.
       final String form = DartSource.codeOf(
         'lib/features/settings/presentation/widgets/settings_form.dart',
       );
@@ -106,9 +155,7 @@ void main() {
         'lib/features/settings/domain/models/pos_settings.dart',
       );
 
-      expect(form, isNot(contains('gstRateBasisPoints')));
       expect(form, isNot(contains('pricesIncludeTax')));
-      expect(settings, isNot(contains('gstRateBasisPoints')));
       expect(settings, isNot(contains('pricesIncludeTax')));
     });
   });
@@ -159,16 +206,30 @@ void main() {
       }
     });
 
-    test('the screen does not claim a printer is connected', () {
+    test('the form delegates the printer rather than growing a transport', () {
+      // This rule used to require the form to state that no printer was connected. Step 13
+      // gave the outlet somewhere to configure one, so that sentence would now be false.
+      // What the rule was protecting is still worth keeping and is now sharper: the
+      // settings module does not acquire a transport, it composes the section from the
+      // module that owns one.
       final String form = DartSource.codeOf(
         'lib/features/settings/presentation/widgets/settings_form.dart',
       );
 
-      // It says the opposite, in as many words.
-      expect(form, contains('No printer is connected on this terminal yet'));
-      expect(form, contains('does not connect a printer'));
+      // The printer section arrives from the printing module, whole.
+      expect(form, contains('PrinterSetupSection'));
+
+      // And this file still opens nothing and prints nothing itself. Connecting a device
+      // and sending a test page both belong behind the printer abstraction, which nothing
+      // here can reach.
       expect(form, isNot(contains('connect(')));
       expect(form, isNot(contains('printTestPage')));
+      expect(form, isNot(contains('ThermalPrinter')));
+      expect(form, isNot(contains('PrintService')));
+
+      // The layout section still says what it is not. Choosing 48 columns is not a claim
+      // that a printer is on the other end of a cable.
+      expect(form, contains('does not connect a printer'));
     });
 
     test('nothing imports a package beyond Flutter and the SQLite binding', () {

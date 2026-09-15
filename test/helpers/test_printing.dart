@@ -7,6 +7,7 @@ import 'package:brisko_billing/features/printing/data/default_print_service.dart
 import 'package:brisko_billing/features/printing/data/escpos/escpos_document_formatter.dart';
 import 'package:brisko_billing/features/printing/data/repository_sale_print_document_source.dart';
 import 'package:brisko_billing/features/printing/data/settings_business_identity_source.dart';
+import 'package:brisko_billing/features/printing/domain/models/monochrome_bitmap.dart';
 import 'package:brisko_billing/features/printing/domain/printers/thermal_printer.dart';
 import 'package:brisko_billing/features/printing/domain/services/print_document_encoder.dart';
 import 'package:brisko_billing/features/printing/domain/services/print_job_factory.dart';
@@ -27,10 +28,15 @@ class TestPrinting {
   /// which is how the bootstrap wires it and what lets a saved printer setting change the
   /// next document. Left out, an encoder is built for the printer's own profile, which is
   /// what an unconfigured terminal uses.
+  /// Pass [logo] to stamp the outlet logo on receipts, which is what the bootstrap does
+  /// with the asset it decodes at start-up. Left out, no logo is printed — the honest
+  /// default for a harness that has not loaded the asset, and what keeps receipt tests
+  /// that assert on the header text unaffected.
   static DefaultPrintService serviceOver(
     SqliteDatabase database, {
     required ThermalPrinter printer,
     PrintDocumentEncoder? encoder,
+    MonochromeBitmap? logo,
   }) {
     return DefaultPrintService(
       printer: printer,
@@ -48,6 +54,7 @@ class TestPrinting {
         // claims no address, GSTIN or UPI address.
         identity: SettingsBusinessIdentitySource(
           settings: SqliteSettingsRepository(database: database),
+          logo: logo,
         ),
       ),
     );

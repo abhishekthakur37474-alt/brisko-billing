@@ -65,6 +65,11 @@ class SalesSummary {
 
   final Money discountTotal;
 
+  /// Sum of the GST charged across those bills, as each bill recorded it.
+  ///
+  /// Each contributing figure was computed at the rate in force when that bill was settled,
+  /// so a range spanning a rate change totals what was actually charged rather than
+  /// restating the earlier bills at the later rate. Nothing here reads the current setting.
   final Money taxTotal;
 
   /// Sum of the bills' totals as rung up, before any reversal.
@@ -76,6 +81,31 @@ class SalesSummary {
   /// is where the direction is applied. Zero by default, so a report built before refunds
   /// existed reads as a report with none.
   final Money refundTotal;
+
+  /// What GST was charged on across the range: [subtotal] less [discountTotal].
+  ///
+  /// Derived from two sums rather than summed itself, so it cannot disagree with them. It is
+  /// the figure that reconciles the tax: taxable sales plus [taxTotal] is [grossSales].
+  Money get taxableSales => subtotal - discountTotal;
+
+  /// The central half of the GST charged, for a CGST line on the report.
+  ///
+  /// Split from [taxTotal] by `Money.allocate`, so the two halves add back to exactly the
+  /// tax that was charged. Deliberately not a sum of each bill's own CGST: that would be a
+  /// second aggregation of the same money, and the two could differ by a paisa per bill.
+  ///
+  /// This is a presentation of one total, and it is the only tax breakdown the report
+  /// carries. One useful GST figure is what a single outlet files from.
+  Money get cgstTotal => taxTotal.allocate(2).first;
+
+  /// The state half of the GST charged. [cgstTotal] plus this is exactly [taxTotal].
+  Money get sgstTotal => taxTotal.allocate(2).last;
+
+  /// True when any GST was charged in the range.
+  bool get hasTax => !taxTotal.isZero;
+
+  /// True when any discount was given in the range.
+  bool get hasDiscounts => !discountTotal.isZero;
 
   /// What the range actually earned: [grossSales] less [refundTotal].
   ///

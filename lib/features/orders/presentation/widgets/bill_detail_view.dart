@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/money/money.dart';
 import '../../../../core/money/money_display.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../customers/domain/models/customer_phone.dart';
 import '../../../customers/domain/repositories/customer_repository.dart';
 import '../../../payments/domain/models/payment_method.dart';
@@ -13,6 +14,7 @@ import '../../../payments/domain/models/refundable_bill.dart';
 import '../../../payments/domain/repositories/payment_repository.dart';
 import '../../../payments/domain/repositories/refund_repository.dart';
 import '../../../printing/domain/print_timestamp.dart';
+import '../../../printing/domain/services/print_service.dart';
 import '../../domain/models/bill_line_snapshot.dart';
 import '../../domain/models/order.dart';
 import '../../domain/models/order_item_option.dart';
@@ -46,6 +48,7 @@ class BillDetailView extends StatelessWidget {
     final PaymentRepository payments = context.read<PaymentRepository>();
     final CustomerRepository customers = context.read<CustomerRepository>();
     final RefundRepository refunds = context.read<RefundRepository>();
+    final PrintService printService = context.read<PrintService>();
 
     return showDialog<void>(
       context: context,
@@ -58,6 +61,7 @@ class BillDetailView extends StatelessWidget {
               paymentRepository: payments,
               customerRepository: customers,
               refundRepository: refunds,
+              printService: printService,
             );
             // Not awaited: the first frame shows the loading state while the read runs.
             unawaited(controller.load());
@@ -84,6 +88,35 @@ class BillDetailView extends StatelessWidget {
       ),
       content: SizedBox(width: 520, child: _Body(controller: controller)),
       actions: <Widget>[
+        // Reprinting is offered on every bill that loaded, and it is the only action here
+        // that changes nothing whatsoever: it rebuilds the documents from these same
+        // committed rows and sends them again. No second order, no second payment, no
+        // second kitchen ticket, no stock movement and no change to a report.
+        if (controller.canReprint) ...<Widget>[
+          TextButton.icon(
+            onPressed: controller.reprintReceipt,
+            icon: const Icon(Icons.receipt_long_outlined, size: 18),
+            label: const Text('Reprint receipt'),
+          ),
+          TextButton.icon(
+            onPressed: controller.reprintKitchenSlips,
+            icon: const Icon(Icons.soup_kitchen_outlined, size: 18),
+            label: const Text('Reprint KOT'),
+          ),
+        ],
+        // Cancelling a live bill. Offered only for a bill that is not yet settled and not
+        // already cancelled — a completed sale is refunded, not cancelled. The business
+        // rules live in the repository; this button only reaches them.
+        if (controller.canCancel)
+          TextButton(
+            onPressed: controller.isCancelling
+                ? null
+                : () => _confirmCancel(context, controller),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Cancel bill'),
+          ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Close'),
@@ -100,6 +133,48 @@ class BillDetailView extends StatelessWidget {
           ),
       ],
     );
+  }
+
+  /// Asks before cancelling, then cancels.
+  ///
+  /// A separate dialog so the action cannot be reached by a stray tap, and one that names
+  /// what a cancellation does and does not do: the record is kept, outstanding kitchen work
+  /// is stopped, and no money moves. The outcome is rendered in place by the notice inside
+  /// the bill rather than a snack bar.
+  Future<void> _confirmCancel(
+    BuildContext context,
+    BillDetailController controller,
+  ) async {
+    final String number = controller.orderNumber ?? '';
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text('Cancel bill $number?'),
+          content: Text(
+            'The bill is kept on the record as cancelled and any outstanding '
+            'kitchen work is stopped. No payment is reversed and stock is not '
+            'put back. This cannot be undone.',
+            style: Theme.of(dialogContext).textTheme.bodySmall,
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Keep the bill'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Cancel the bill'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed ?? false) {
+      await controller.cancel();
+    }
   }
 
   /// Asks before moving money, then refunds.
@@ -221,6 +296,151 @@ class _Body extends StatelessWidget {
             const Divider(height: 24),
             _RefundPanel(controller: controller),
           ],
+          _ReprintStatus(controller: controller),
+          _CancelStatus(controller: controller),
+        ],
+      ),
+    );
+  }
+}
+
+/// Whether the last cancellation went through, and why it did not if it failed.
+///
+/// Silent until a cancellation has been attempted. Separate from the refund and reprint
+/// notices: a refused cancellation is a fact about that one action, and the bill behind it
+/// is still perfectly readable.
+class _CancelStatus extends StatelessWidget {
+  const _CancelStatus({required this.controller});
+
+  final BillDetailController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    if (controller.isCancelling) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: Text('Cancelling the bill…', style: theme.textTheme.bodySmall),
+      );
+    }
+
+    if (controller.didCancel) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Icon(
+              Icons.check_circle_outline,
+              size: 18,
+              color: AppColors.success,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'This bill has been cancelled. The record is kept and no '
+                'money was reversed.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.success,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (!controller.hasCancelError) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(Icons.error_outline, size: 18, color: theme.colorScheme.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              controller.cancelError!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: controller.dismissCancelError,
+            icon: const Icon(Icons.close, size: 18),
+            tooltip: 'Dismiss',
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// How the last reprint went.
+///
+/// Silent until something has been sent, because a bill nobody has asked to reprint has
+/// nothing to report. Deliberately separate from the refund panel and from the bill itself: a
+/// printer that would not take the paper says nothing about the sale or the money, and it must
+/// not look as though it does.
+class _ReprintStatus extends StatelessWidget {
+  const _ReprintStatus({required this.controller});
+
+  final BillDetailController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+
+    if (controller.isReprinting) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: Text(
+          'Sending to the printer…',
+          style: theme.textTheme.bodySmall,
+        ),
+      );
+    }
+
+    final String? message = controller.reprintMessage;
+    if (message == null) {
+      return const SizedBox.shrink();
+    }
+
+    final Color colour = controller.didReprint
+        ? AppColors.success
+        : theme.colorScheme.error;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(
+            controller.didReprint
+                ? Icons.check_circle_outline
+                : Icons.print_disabled_outlined,
+            size: 18,
+            color: colour,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: theme.textTheme.bodySmall?.copyWith(color: colour),
+            ),
+          ),
+          IconButton(
+            onPressed: controller.dismissReprintMessage,
+            icon: const Icon(Icons.close, size: 18),
+            tooltip: 'Dismiss',
+            visualDensity: VisualDensity.compact,
+          ),
         ],
       ),
     );

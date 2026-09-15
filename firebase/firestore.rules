@@ -1,0 +1,42 @@
+rules_version = '2';
+
+// Brisko Billing — Cloud Firestore security rules.
+//
+// Deploy to YOUR OWN Firebase project (Firebase console → Firestore → Rules, or
+// `firebase deploy --only firestore:rules`). These rules are the whole of the cloud
+// access-control model; the client holds only a project id, a client-safe Web API key
+// and a signed-in user's session, none of which grants any access on its own.
+//
+// ## The model, in one paragraph
+//
+// All of a terminal's data lives under one document per restaurant:
+// `restaurants/{restaurantId}/…`. A restaurant IS a Firebase Authentication user, and
+// its `restaurantId` is that user's `uid`. A request may read or write a document only
+// when it carries a valid session whose `uid` equals the `restaurantId` in the path. So
+// an unauthenticated request is denied everything, and one authenticated restaurant can
+// never read or write another restaurant's data — the boundary is enforced here on the
+// server, not by hiding ids or by any client-side check.
+//
+// ## Extending to multiple users per restaurant later
+//
+// The single-account model (one Firebase user per restaurant) is deliberately the
+// simplest correct starting point. When several terminals or staff logins must share one
+// restaurant, replace the `uid == restaurantId` test with a membership lookup, for
+// example a document at `restaurants/{restaurantId}/members/{uid}`, and check
+// `exists(...)`. The document layout does not change; only this predicate does.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Everything the terminal syncs is nested under its restaurant document, so a
+    // single recursive rule covers orders, order items, payments, refunds, customers,
+    // menu, inventory, stock movements and kitchen slips alike.
+    match /restaurants/{restaurantId}/{document=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == restaurantId;
+    }
+
+    // Anything outside a restaurant document is denied by default (no rule matches),
+    // which is the intended behaviour: there is no shared or public collection.
+  }
+}

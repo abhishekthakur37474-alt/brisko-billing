@@ -47,8 +47,17 @@ class _BillingScreenState extends State<BillingScreen> {
     // The controller is app-scoped so the cart survives a switch to another section,
     // and it ignores this call once the menu is loaded.
     WidgetsBinding.instance.addPostFrameCallback((Duration _) {
-      if (mounted) {
-        unawaited(context.read<BillingController>().ensureMenuLoaded());
+      if (!mounted) {
+        return;
+      }
+      final BillingController controller = context.read<BillingController>();
+      // First open loads the menu; a later return to this section re-reads it, so a
+      // change made in menu management is reflected at the counter. The cart survives
+      // both, because it lives on the app-scoped controller rather than this widget.
+      if (controller.isMenuReady) {
+        unawaited(controller.reloadMenu());
+      } else {
+        unawaited(controller.ensureMenuLoaded());
       }
     });
   }

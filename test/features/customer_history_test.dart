@@ -22,10 +22,12 @@ import 'package:brisko_billing/features/orders/presentation/controllers/bill_det
 import 'package:brisko_billing/features/payments/data/repositories/sqlite_payment_repository.dart';
 import 'package:brisko_billing/features/payments/data/repositories/sqlite_refund_repository.dart';
 import 'package:brisko_billing/features/payments/domain/models/payment_method.dart';
+import 'package:brisko_billing/features/printing/data/printers/unconfigured_thermal_printer.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/seeded_cart.dart';
 import '../helpers/test_database.dart';
+import '../helpers/test_printing.dart';
 
 /// Customer order history, over the real database and the real settlement path.
 ///
@@ -121,6 +123,10 @@ void main() {
       paymentRepository: payments,
       customerRepository: customers,
       refundRepository: SqliteRefundRepository(database: database),
+      printService: TestPrinting.serviceOver(
+        database,
+        printer: UnconfiguredThermalPrinter(),
+      ),
     );
     addTearDown(controller.dispose);
     await controller.load();

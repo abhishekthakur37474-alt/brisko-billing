@@ -181,8 +181,12 @@ class _CartSummary extends StatelessWidget {
           const _HoldRow(),
           const _HeldNotice(),
           const SizedBox(height: 8),
+          // The subtotal is all this panel can honestly show. A discount is entered at
+          // checkout, on the bill it applies to, and GST is charged on what is left after
+          // it — so neither figure exists until settlement opens. Saying so is better than
+          // showing a total here that the next screen changes.
           Text(
-            'No discount or tax is applied. Neither is configured yet.',
+            'Discount and GST are applied at checkout.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),

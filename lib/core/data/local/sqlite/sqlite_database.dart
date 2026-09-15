@@ -11,6 +11,8 @@ import 'migrations/m005_kot_order_snapshots.dart';
 import 'migrations/m006_recipes_and_stock_deduction.dart';
 import 'migrations/m007_held_bills.dart';
 import 'migrations/m008_refunds.dart';
+import 'migrations/m009_bill_tax_and_discount.dart';
+import 'migrations/m010_cloud_sync_metadata.dart';
 import 'migrations/migration.dart';
 import 'migrations/migration_runner.dart';
 
@@ -35,6 +37,8 @@ class SqliteDatabase {
     const M006RecipesAndStockDeduction(),
     const M007HeldBills(),
     const M008Refunds(),
+    const M009BillTaxAndDiscount(),
+    const M010CloudSyncMetadata(),
   ]);
 
   /// File name of the database inside the platform's databases directory.

@@ -31,6 +31,11 @@ class SqliteTables {
   static const String heldBillLineOptions = 'held_bill_line_options';
   static const String settings = 'settings';
   static const String outbox = 'outbox';
+
+  /// Cloud synchronisation bookmarks: the pull high-water mark, the last
+  /// successful sync time, and the initial-bootstrap flag. See
+  /// `M010CloudSyncMetadata`. Never holds bill data.
+  static const String syncMetadata = 'sync_metadata';
 }
 
 /// Columns every syncable table carries.

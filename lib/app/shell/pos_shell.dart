@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../features/billing/presentation/screens/billing_screen.dart';
+import '../../features/cloud_sync/presentation/widgets/sync_status_indicator.dart';
 import '../../features/customers/presentation/screens/customers_screen.dart';
 import '../../features/dashboard/presentation/screens/dashboard_screen.dart';
 import '../../features/inventory/presentation/screens/inventory_screen.dart';
@@ -33,8 +34,12 @@ class PosShell extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(section.label),
-        // Placeholder-free app bar. Sync status and shift actions are added here
-        // when those modules exist.
+        // Unobtrusive, and never a control: the sync status reports here, while
+        // the manual sync and detail live in Settings.
+        actions: const <Widget>[
+          Center(child: SyncStatusIndicator()),
+          SizedBox(width: 8),
+        ],
       ),
       body: Row(
         children: <Widget>[

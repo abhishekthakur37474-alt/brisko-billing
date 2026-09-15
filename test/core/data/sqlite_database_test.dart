@@ -32,10 +32,11 @@ void main() {
     test('reports the schema version the migrations define', () async {
       final int version = await database.database.getVersion();
       expect(version, SqliteDatabase.schemaVersion);
-      // Eight migrations: the schema, the category seed, the product seed, the
+      // Ten migrations: the schema, the category seed, the product seed, the
       // option scope columns, the KOT order snapshots, recipes with automatic
-      // stock deduction, held bills, and refunds.
-      expect(SqliteDatabase.schemaVersion, 8);
+      // stock deduction, held bills, refunds, the GST rate and discount rule a
+      // bill was settled with, and the cloud synchronisation bookmarks.
+      expect(SqliteDatabase.schemaVersion, 10);
     });
 
     test('creates every table the POS needs', () async {

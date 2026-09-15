@@ -35,8 +35,8 @@ class ConfigurableEscPosEncoder
     implements PrintDocumentEncoder, ActivePrintProfile {
   ConfigurableEscPosEncoder({
     required PrintProfile base,
-    required this.capabilities,
-    PrintSettings? settings,
+    required PrintSettings? settings,
+    required this._capabilities,
   }) : _base = base,
        _profile = settings?.applyTo(base) ?? base;
 
@@ -59,15 +59,29 @@ class ConfigurableEscPosEncoder
   ///
   /// Kept so that clearing a setting returns to the hardware's value rather than to a
   /// literal written into the settings module.
-  final PrintProfile _base;
+  PrintProfile _base;
+
+  PrinterCapabilities _capabilities;
 
   @override
-  final PrinterCapabilities capabilities;
+  PrinterCapabilities get capabilities => _capabilities;
 
   PrintProfile _profile;
 
   @override
   PrintProfile get profile => _profile;
+
+  @override
+  void retargetTo(PrinterCapabilities capabilities) {
+    final PrintSettings chosen = PrintSettings.fromProfile(_profile);
+    _capabilities = capabilities;
+    _base = PrintProfile.forCapabilities(capabilities);
+    // A saved column count that no longer fits — 48 columns carried onto a 58mm roll, for
+    // example — is dropped rather than applied. A document laid out wider than the paper
+    // does not wrap, it truncates, and what it truncates is the amount at the right-hand
+    // edge.
+    _profile = chosen.isValidFor(capabilities) ? chosen.applyTo(_base) : _base;
+  }
 
   @override
   PrintSettings get settings => PrintSettings.fromProfile(_profile);

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../features/auth/presentation/widgets/auth_gate.dart';
 import '../../features/billing/presentation/screens/checkout_screen.dart';
 import '../../features/billing/presentation/screens/held_bills_screen.dart';
-import '../shell/pos_shell.dart';
+import '../../features/reports/presentation/screens/order_history_screen.dart';
 
 /// Named routes for screens that open on top of the shell.
 ///
@@ -13,7 +14,8 @@ import '../shell/pos_shell.dart';
 class AppRoutes {
   const AppRoutes._();
 
-  /// Entry point of the application.
+  /// Entry point of the application. Resolves to the [AuthGate], which shows the login
+  /// screen or the till depending on whether the terminal is signed in.
   static const String home = '/';
 
   /// Bill settlement, pushed over the shell.
@@ -32,11 +34,21 @@ class AppRoutes {
   /// arguments.
   static const String heldBills = '/held-bills';
 
+  /// The order-history search, pushed over the shell.
+  ///
+  /// A route rather than a shell section, for the same reason as [checkout] and
+  /// [heldBills]: it is a full-screen flow opened from the dashboard, and the section the
+  /// operator was on — the kitchen board, most often — stays underneath. The Orders section
+  /// remains the live kitchen; this is where a settled bill is found after the fact. The
+  /// screen reads the bills for itself, so the route carries no arguments.
+  static const String orderHistory = '/order-history';
+
   static Map<String, WidgetBuilder> routes() {
     return <String, WidgetBuilder>{
-      home: (BuildContext context) => const PosShell(),
+      home: (BuildContext context) => const AuthGate(),
       checkout: (BuildContext context) => const CheckoutScreen(),
       heldBills: (BuildContext context) => const HeldBillsScreen(),
+      orderHistory: (BuildContext context) => const OrderHistoryScreen(),
     };
   }
 

@@ -43,6 +43,28 @@ abstract interface class PrintService {
   /// second copy cannot be mistaken for a second sale.
   Future<SalePrintRun> reprintSale(String orderId);
 
+  /// Prints the customer's receipt again, and nothing else.
+  ///
+  /// The usual reprint. A customer asking for their bill at the door does not need the
+  /// kitchen slip re-cut, and sending one would put a second slip for food that has
+  /// already been cooked into the pass.
+  ///
+  /// Rebuilt from the persisted order and payment, so it does not depend on the original
+  /// cart still existing anywhere. It writes nothing: no second order, no second payment,
+  /// no change to a total, a report or a stock figure.
+  Future<SalePrintRun> reprintReceipt(String orderId);
+
+  /// Prints the order's kitchen slips again, and nothing else.
+  ///
+  /// For a slip lost between the counter and the pass. Built from the kitchen tickets
+  /// already stored against the order, so it raises no new ticket, deducts no stock and
+  /// does not disturb where the existing slips stand in
+  /// pending → preparing → ready.
+  ///
+  /// Returns a run with no jobs when the order has no kitchen tickets, which is a
+  /// statement rather than a failure: there is nothing to print again.
+  Future<SalePrintRun> reprintKitchenSlips(String orderId);
+
   /// Prints a short self-test page.
   ///
   /// Exists so a printer can be proved working from the settings screen without

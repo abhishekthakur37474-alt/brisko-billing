@@ -29,6 +29,10 @@ class SettingKeys {
   static const String receiptHeader = 'receipt.header';
   static const String receiptFooter = 'receipt.footer';
 
+  /// URL a customer scans to leave a review. Drives the feedback QR on the paid
+  /// receipt. Absent means no QR is printed — a QR pointing nowhere is worse than none.
+  static const String feedbackUrl = 'receipt.feedbackUrl';
+
   /// UPI virtual payment address used to generate the payment QR.
   static const String upiVpa = 'payment.upiVpa';
 

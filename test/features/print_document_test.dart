@@ -1,4 +1,5 @@
 import 'package:brisko_billing/core/money/money.dart';
+import 'package:brisko_billing/features/billing/domain/models/gst_rate.dart';
 import 'package:brisko_billing/features/orders/domain/models/order_type.dart';
 import 'package:brisko_billing/features/payments/domain/models/payment_method.dart';
 import 'package:brisko_billing/features/printing/data/escpos/escpos_commands.dart';
@@ -7,7 +8,6 @@ import 'package:brisko_billing/features/printing/domain/models/business_identity
 import 'package:brisko_billing/features/printing/domain/models/paper_width.dart';
 import 'package:brisko_billing/features/printing/domain/models/print_document.dart';
 import 'package:brisko_billing/features/printing/domain/models/print_profile.dart';
-import 'package:brisko_billing/features/printing/domain/models/printer_capabilities.dart';
 import 'package:brisko_billing/features/printing/domain/models/upi_payment_request.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -36,7 +36,6 @@ void main() {
     CustomerReceiptTotals? totals,
     PaymentMethod paymentMethod = PaymentMethod.cash,
     String? customerPhone,
-    UpiPaymentRequest? upiPayment,
     String? notes,
     OrderType orderType = OrderType.takeaway,
     bool isReprint = false,
@@ -79,7 +78,6 @@ void main() {
           ),
       paymentMethod: paymentMethod,
       customerPhone: customerPhone,
-      upiPayment: upiPayment,
       notes: notes,
       isReprint: isReprint,
     );
@@ -310,32 +308,144 @@ void main() {
       expect(paper.lineContaining('TOTAL')!.endsWith('1499.00'), isTrue);
     });
 
-    test('zero discount and zero tax are printed, not omitted', () {
+    test('a bill with no discount and no tax carries neither line', () {
+      // This rule was the other way round until step 14. It printed `Discount 0.00` and
+      // `Tax 0.00` on every bill, on the reasoning that a customer should be able to see
+      // they were not charged tax — which was worth saying while *no* bill could ever carry
+      // either figure.
+      //
+      // Now that both are real, a zero row reads as a charge of nothing rather than as an
+      // absence, and it invites the question "what is that for?" at the counter. The
+      // subtotal and the total are always printed, because those two are the bill; a line
+      // that describes no charge is left off.
       final EscPosTranscript paper = print(receipt());
 
-      expect(paper.lineContaining('Discount')!.endsWith('0.00'), isTrue);
-      expect(paper.lineContaining('Tax')!.endsWith('0.00'), isTrue);
+      expect(paper.hasLineContaining('Discount'), isFalse);
+      expect(paper.hasLineContaining('Taxable'), isFalse);
+      expect(paper.hasLineContaining('CGST'), isFalse);
+      expect(paper.hasLineContaining('SGST'), isFalse);
+      // What the bill does say.
+      expect(paper.lineContaining('Subtotal')!.endsWith('320.00'), isTrue);
+      expect(paper.lineContaining('TOTAL')!.endsWith('320.00'), isTrue);
     });
 
-    test('a future discount and tax print in the same block', () {
-      // Nothing in this build produces either. When a rate is configured the figures
-      // appear with no layout change, which is what this proves.
+    test('a discount and GST print as a block that adds up', () {
+      // Subtotal 1000, less 100 discount, taxable 900, GST 18% of 900 = 162, total 1062.
       final EscPosTranscript paper = print(
         receipt(
           totals: CustomerReceiptTotals(
             subtotal: Money.parse('1000.00'),
             discount: Money.parse('100.00'),
-            tax: Money.parse('45.00'),
-            total: Money.parse('945.00'),
+            tax: Money.parse('162.00'),
+            total: Money.parse('1062.00'),
+            taxRate: const GstRate.ofBasisPoints(1800),
+            discountLabel: '10%',
           ),
         ),
       );
 
       expect(paper.lineContaining('Subtotal')!.endsWith('1000.00'), isTrue);
-      expect(paper.lineContaining('Discount')!.endsWith('100.00'), isTrue);
-      expect(paper.lineContaining('Tax')!.endsWith('45.00'), isTrue);
-      expect(paper.lineContaining('TOTAL')!.endsWith('945.00'), isTrue);
+      // Negative, so the customer can read the block downwards as arithmetic, and labelled
+      // with the rule that produced it.
+      final String discount = paper.lineContaining('Discount')!;
+      expect(discount, contains('10%'));
+      expect(discount.endsWith('-100.00'), isTrue);
+      expect(
+        paper.lineContaining('Taxable amount')!.endsWith('900.00'),
+        isTrue,
+      );
+      // The tax is stated as its two halves, each labelled with half the rate, and they add
+      // back to exactly the 162.00 charged.
+      expect(paper.lineContaining('CGST')!.endsWith('81.00'), isTrue);
+      expect(paper.lineContaining('SGST')!.endsWith('81.00'), isTrue);
+      expect(paper.hasLineContaining('CGST 9%'), isTrue);
+      expect(paper.hasLineContaining('SGST 9%'), isTrue);
+      expect(paper.lineContaining('TOTAL')!.endsWith('1062.00'), isTrue);
       expect(paper.widestLine, lessThanOrEqualTo(columns));
+    });
+
+    test('GST with no discount omits the taxable amount line', () {
+      // With nothing taken off, the taxable amount is the subtotal. Repeating the figure
+      // one row down tells the customer nothing.
+      final EscPosTranscript paper = print(
+        receipt(
+          totals: CustomerReceiptTotals(
+            subtotal: Money.parse('1000.00'),
+            discount: Money.zero,
+            tax: Money.parse('50.00'),
+            total: Money.parse('1050.00'),
+            taxRate: const GstRate.ofBasisPoints(500),
+          ),
+        ),
+      );
+
+      expect(paper.hasLineContaining('Discount'), isFalse);
+      expect(paper.hasLineContaining('Taxable amount'), isFalse);
+      expect(paper.lineContaining('CGST')!.endsWith('25.00'), isTrue);
+      expect(paper.lineContaining('SGST')!.endsWith('25.00'), isTrue);
+      expect(paper.hasLineContaining('CGST 2.5%'), isTrue);
+      expect(paper.lineContaining('TOTAL')!.endsWith('1050.00'), isTrue);
+    });
+
+    test('a discount with no GST prints the discount and no tax lines', () {
+      final EscPosTranscript paper = print(
+        receipt(
+          totals: CustomerReceiptTotals(
+            subtotal: Money.parse('1000.00'),
+            discount: Money.parse('100.00'),
+            tax: Money.zero,
+            total: Money.parse('900.00'),
+            discountLabel: '\u20B9100.00',
+          ),
+        ),
+      );
+
+      expect(paper.lineContaining('Discount')!.endsWith('-100.00'), isTrue);
+      // No tax to explain, so no taxable-amount row either.
+      expect(paper.hasLineContaining('Taxable amount'), isFalse);
+      expect(paper.hasLineContaining('CGST'), isFalse);
+      expect(paper.hasLineContaining('SGST'), isFalse);
+      expect(paper.lineContaining('TOTAL')!.endsWith('900.00'), isTrue);
+    });
+
+    test('an odd paisa of tax is split without creating or losing one', () {
+      // 5% of 249.50 is 12.475, which rounds to 12.48 — an odd number of paise. The halves
+      // must still come to exactly it, so one of them takes the extra paisa.
+      final EscPosTranscript paper = print(
+        receipt(
+          totals: CustomerReceiptTotals(
+            subtotal: Money.parse('249.50'),
+            discount: Money.zero,
+            tax: Money.parse('12.48'),
+            total: Money.parse('261.98'),
+            taxRate: const GstRate.ofBasisPoints(500),
+          ),
+        ),
+      );
+
+      expect(paper.lineContaining('CGST')!.endsWith('6.24'), isTrue);
+      expect(paper.lineContaining('SGST')!.endsWith('6.24'), isTrue);
+      expect(paper.lineContaining('TOTAL')!.endsWith('261.98'), isTrue);
+    });
+
+    test('a bill whose rate was never recorded still prints its tax', () {
+      // A bill settled before the rate was stored against it. The amounts are stored
+      // figures and print correctly; only the rate label is absent, because it is not
+      // known and will not be guessed at.
+      final EscPosTranscript paper = print(
+        receipt(
+          totals: CustomerReceiptTotals(
+            subtotal: Money.parse('1000.00'),
+            discount: Money.zero,
+            tax: Money.parse('50.00'),
+            total: Money.parse('1050.00'),
+          ),
+        ),
+      );
+
+      expect(paper.lineContaining('CGST')!.endsWith('25.00'), isTrue);
+      expect(paper.hasLineContaining('CGST 0%'), isFalse);
+      expect(paper.lineContaining('CGST')!.trim(), startsWith('CGST '));
     });
 
     test('rupee amounts are exact to the paisa', () {
@@ -419,14 +529,10 @@ void main() {
             phone: '02012345678',
             gstin: '27ABCDE1234F1Z5',
             receiptFooter: 'Thank you, please come again',
+            feedbackUrl: 'https://g.page/r/brisko-pizza/review',
           ),
           customerPhone: '9876543210',
           notes: 'Extra napkins please, and cut the large one into eight',
-          upiPayment: UpiPaymentRequest(
-            vpa: 'briskopizza@upi',
-            payeeName: 'Brisko Pizza',
-            amount: Money.parse('320.00'),
-          ),
         ),
       );
 
@@ -435,25 +541,62 @@ void main() {
     });
   });
 
-  group('the UPI payment code', () {
-    test('the QR carries the payee, the exact amount and the currency', () {
-      final UpiPaymentRequest request = UpiPaymentRequest(
+  group('the feedback code', () {
+    test('a paid receipt never carries a payment QR', () {
+      // The customer has already paid by the time this prints. A paid bill that asks
+      // to be paid again is a mistake waiting to happen at the counter.
+      final EscPosTranscript paper = print(
+        receipt(
+          business: const BusinessIdentity(
+            name: 'Brisko Pizza',
+            feedbackUrl: 'https://g.page/r/brisko-pizza/review',
+          ),
+        ),
+      );
+
+      expect(paper.text, isNot(contains('Scan to pay')));
+      expect(paper.text, isNot(contains('upi://pay')));
+    });
+
+    test('a configured feedback URL prints the review QR with that URL', () {
+      const String url = 'https://g.page/r/brisko-pizza/review';
+      final EscPosTranscript paper = print(
+        receipt(business: const BusinessIdentity(feedbackUrl: url)),
+      );
+
+      // The QR carries exactly the configured review URL, and nothing else.
+      expect(paper.qrPayloads.single, url);
+      expect(paper.hasLineContaining('RATE US'), isTrue);
+      expect(paper.hasLineContaining('Scan to share your feedback'), isTrue);
+      expect(paper.hasLineContaining('Thank you for visiting'), isTrue);
+    });
+
+    test('no configured feedback URL means no QR at all', () {
+      // A QR is a promise that scanning it reaches this outlet's review page. There
+      // is no honest placeholder for that.
+      final EscPosTranscript paper = print(receipt());
+
+      expect(paper.qrPayloads, isEmpty);
+      expect(paper.text, isNot(contains('RATE US')));
+      expect(paper.text, isNot(contains('Scan to')));
+      expect(paper.hasCommand(EscPosCommands.qrPrint), isFalse);
+    });
+  });
+
+  group('the UPI payment request', () {
+    test('the URI carries the payee, the exact amount and the currency', () {
+      final String payload = UpiPaymentRequest(
         vpa: 'briskopizza@upi',
         payeeName: 'Brisko Pizza',
         amount: Money.parse('640.50'),
         transactionReference: '20260911-0001',
-      );
-
-      final EscPosTranscript paper = print(receipt(upiPayment: request));
-      final String payload = paper.qrPayloads.single;
+      ).toUri();
 
       expect(payload, startsWith('upi://pay?'));
       expect(payload, contains('pa=briskopizza%40upi'));
       expect(payload, contains('am=640.50'));
       expect(payload, contains('cu=INR'));
       expect(payload, contains('tr=20260911-0001'));
-      expect(paper.hasLineContaining('Scan to pay by UPI'), isTrue);
-      expect(paper.hasLineContaining('briskopizza@upi'), isTrue);
     });
 
     test('a payee name with punctuation is encoded, not broken', () {
@@ -464,16 +607,6 @@ void main() {
       ).toUri();
 
       expect(payload, contains('pn=Brisko+Pizza+%26+Co'));
-    });
-
-    test('no configured UPI address means no QR at all', () {
-      // A QR is a promise that scanning it pays this outlet. There is no honest
-      // placeholder for that.
-      final EscPosTranscript paper = print(receipt());
-
-      expect(paper.qrPayloads, isEmpty);
-      expect(paper.text, isNot(contains('Scan to pay')));
-      expect(paper.hasCommand(EscPosCommands.qrPrint), isFalse);
     });
 
     test('a request is only built once a VPA exists', () {
@@ -964,12 +1097,10 @@ void main() {
   });
 
   group('nothing is invented to fill a space', () {
-    test('no logo, because no printer has been proved able to print one', () {
-      // A bitmap logo needs PrinterCapabilities.supportsGraphics, which stays false
-      // until a real device says otherwise. A placeholder image on a customer's bill
-      // would be worse than none, so no graphics command is emitted at all.
-      expect(PrinterCapabilities.escPos80mm.supportsGraphics, isFalse);
-
+    test('a receipt with no logo configured emits no graphics command', () {
+      // The outlet logo is optional. When no logo is bundled the receipt leads with the
+      // outlet name and no raster command is sent — a placeholder or generated image
+      // would be worse than none. (A configured logo is covered in receipt_logo_test.)
       final List<int> selectors = print(receipt()).commands
           .map((List<int> command) => command[1])
           .toList(growable: false);

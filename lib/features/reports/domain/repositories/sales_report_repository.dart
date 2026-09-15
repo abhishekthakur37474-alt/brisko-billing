@@ -1,4 +1,5 @@
 import '../../../../core/utils/result.dart';
+import '../models/bill_search_query.dart';
 import '../models/date_range.dart';
 import '../models/item_sales_row.dart';
 import '../models/payment_mix.dart';
@@ -92,4 +93,25 @@ abstract interface class SalesReportRepository {
   /// A refunded bill appears here, at its full total, with `SalesBill.refundedAmount` saying
   /// what went back. It is not removed from the list, because it is a sale that happened.
   Future<Result<List<SalesBill>>> loadBills(DateRange range, {int limit});
+
+  /// The settled bills matching [query], newest first.
+  ///
+  /// Order history: the cashier finding a bill by its number, the customer's phone, a date
+  /// range or an order type, in any combination. Every criterion narrows the same set
+  /// [loadBills] returns — settled bills only, so a cancelled or unsettled record never
+  /// surfaces as a sale — and each carries the same figures, payment method, slip number,
+  /// customer and refund state.
+  ///
+  /// A [query] with nothing set matches every settled bill, so the caller decides whether a
+  /// blank search means "everything recent" or "nothing yet"; see `BillSearchQuery.isEmpty`.
+  /// A phone search excludes walk-in bills, which have no number to match. Bill number and
+  /// phone are matched anywhere within the stored value, so a partial number finds a bill.
+  ///
+  /// One statement, like [loadBills]: the filters become a `WHERE`, not a second pass in
+  /// Dart, so a search of a year of trading is one indexed query rather than every bill read
+  /// into memory.
+  Future<Result<List<SalesBill>>> searchBills(
+    BillSearchQuery query, {
+    int limit,
+  });
 }
