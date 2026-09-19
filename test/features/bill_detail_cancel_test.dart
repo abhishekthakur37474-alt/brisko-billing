@@ -1,5 +1,6 @@
 import 'package:brisko_billing/core/data/local/sqlite/sqlite_database.dart';
 import 'package:brisko_billing/core/money/money.dart';
+import 'package:brisko_billing/features/auth/domain/services/manager_auth_service.dart';
 import 'package:brisko_billing/features/customers/data/repositories/sqlite_customer_repository.dart';
 import 'package:brisko_billing/features/kot/data/repositories/sqlite_kot_repository.dart';
 import 'package:brisko_billing/features/kot/domain/models/kot_status.dart';
@@ -12,6 +13,7 @@ import 'package:brisko_billing/features/payments/domain/models/payment_method.da
 import 'package:brisko_billing/features/payments/domain/models/payment_status.dart';
 import 'package:brisko_billing/features/printing/data/printers/unconfigured_thermal_printer.dart';
 import 'package:brisko_billing/features/printing/domain/services/print_service.dart';
+import 'package:brisko_billing/features/settings/data/repositories/sqlite_settings_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/fixtures.dart';
@@ -39,6 +41,7 @@ void main() {
   late SqliteRefundRepository refunds;
   late SqliteKotRepository kots;
   late PrintService printing;
+  late ManagerAuthService managerAuth;
 
   setUp(() async {
     database = await TestDatabase.openInMemory();
@@ -52,6 +55,10 @@ void main() {
       database,
       printer: UnconfiguredThermalPrinter(),
     );
+    managerAuth = ManagerAuthService(
+      settings: SqliteSettingsRepository(database: database),
+    );
+    await managerAuth.setPassword('1234');
   });
 
   tearDown(() async {
@@ -65,7 +72,7 @@ void main() {
       paymentRepository: payments,
       customerRepository: customers,
       refundRepository: refunds,
-      managerAuthService: ManagerAuthService(settings: SettingsRepository.empty()),
+      managerAuthService: managerAuth,
       printService: printing,
     );
     addTearDown(controller.dispose);

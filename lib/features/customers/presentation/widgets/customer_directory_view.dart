@@ -242,7 +242,9 @@ class _CustomerRow extends StatelessWidget {
         onTap: onTap,
         selected: isSelected,
         title: Text(
-          CustomerPhone.forDisplay(summary.phone),
+          name == null || name.isEmpty
+              ? CustomerPhone.forDisplay(summary.phone)
+              : name,
           style: theme.textTheme.titleSmall,
         ),
         subtitle: Text(
@@ -275,7 +277,7 @@ class _CustomerRow extends StatelessWidget {
     );
   }
 
-  /// The name if one was recorded, and when they last came in.
+  /// The phone number, and when they last came in.
   ///
   /// Says "No bills yet" rather than showing a date that does not exist. A record can
   /// legitimately have nothing against it.
@@ -284,6 +286,7 @@ class _CustomerRow extends StatelessWidget {
     final String visit = last == null
         ? 'No bills yet'
         : 'Last bill ${PrintTimestamp.stamp(last)}';
-    return name == null || name.isEmpty ? visit : '$name  ·  $visit';
+    final String number = CustomerPhone.forDisplay(summary.phone);
+    return name == null || name.isEmpty ? visit : '$number  ·  $visit';
   }
 }

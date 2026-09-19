@@ -296,12 +296,14 @@ class _HistoryRow extends StatelessWidget {
   }
 
   String _who() {
+    final String? name = bill.customerName?.trim();
+    if (name != null && name.isNotEmpty) {
+      return name;
+    }
     final String? phone = bill.customerPhone;
     if (phone == null) {
       return 'Walk-in';
     }
-    final String? name = bill.customerName?.trim();
-    final String number = CustomerPhone.forDisplay(phone);
-    return name == null || name.isEmpty ? number : '$name  ·  $number';
+    return CustomerPhone.forDisplay(phone);
   }
 }

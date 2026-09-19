@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../features/auth/presentation/screens/manager_password_screen.dart';
 import '../../features/billing/presentation/screens/billing_screen.dart';
 import '../../features/cloud_sync/presentation/widgets/sync_status_indicator.dart';
 import '../../features/customers/presentation/screens/customers_screen.dart';
@@ -83,6 +84,7 @@ class PosShell extends StatelessWidget {
       PosSection.customers => const CustomersScreen(),
       PosSection.reports => const ReportsScreen(),
       PosSection.expenses => const ExpensesScreen(),
+      PosSection.manager => const ManagerPasswordScreen(),
       PosSection.settings => const SettingsScreen(),
     };
   }
@@ -127,28 +129,96 @@ class _ShellTitle extends StatelessWidget {
 }
 
 /// Side navigation for tablet and desktop layouts.
+///
+/// A custom rail rather than [NavigationRail]: ten labelled destinations do not
+/// always fit a short counter window, and [NavigationRail] overflows instead of
+/// scrolling. This list scrolls when it must, and keeps the same icon-above-label
+/// layout the operator already knows.
 class _ShellNavigationRail extends StatelessWidget {
   const _ShellNavigationRail({required this.section});
+
+  static const double _width = 88;
 
   final PosSection section;
 
   @override
   Widget build(BuildContext context) {
-    return NavigationRail(
-      selectedIndex: section.index,
-      labelType: NavigationRailLabelType.all,
-      groupAlignment: -1,
-      onDestinationSelected: (int index) {
-        context.read<ShellController>().select(PosSection.values[index]);
-      },
-      destinations: <NavigationRailDestination>[
-        for (final PosSection item in PosSection.values)
-          NavigationRailDestination(
-            icon: Icon(item.icon),
-            selectedIcon: Icon(item.selectedIcon),
-            label: Text(item.label),
-          ),
-      ],
+    final ColorScheme colours = Theme.of(context).colorScheme;
+
+    return Material(
+      color: colours.surface,
+      child: SizedBox(
+        width: _width,
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          children: <Widget>[
+            for (final PosSection item in PosSection.values)
+              _RailDestination(
+                item: item,
+                selected: item == section,
+                onTap: () => context.read<ShellController>().select(item),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One destination in the side rail: icon, then the section label.
+class _RailDestination extends StatelessWidget {
+  const _RailDestination({
+    required this.item,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final PosSection item;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colours = theme.colorScheme;
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            AnimatedContainer(
+              duration: kThemeAnimationDuration,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: selected ? colours.secondaryContainer : null,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(
+                selected ? item.selectedIcon : item.icon,
+                color: selected
+                    ? colours.onSecondaryContainer
+                    : colours.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              item.label,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: selected
+                    ? colours.onSurface
+                    : colours.onSurfaceVariant,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

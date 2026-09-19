@@ -33,7 +33,7 @@ class CheckoutReviewStep extends StatelessWidget {
             Text('Customer', style: theme.textTheme.titleSmall),
             const SizedBox(width: 8),
             Text(
-              controller.requiresCustomerPhone ? 'Required' : 'Optional',
+              'Required',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -341,15 +341,29 @@ class _CustomerInfoFieldsState extends State<_CustomerInfoFields> {
       );
     }
 
-    // Only reported once something has been entered. An empty field on a takeaway is
-    // not a mistake, it is a walk-in.
-    final String? problem = controller.hasCustomerPhone
+    final String? phoneProblem = controller.hasCustomerPhone
         ? controller.customerPhoneProblem
+        : null;
+    final String? nameProblem = controller.customerName.isNotEmpty
+        ? controller.customerNameProblem
         : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
+        TextField(
+          controller: _nameField,
+          textCapitalization: TextCapitalization.words,
+          decoration: InputDecoration(
+            labelText: 'Customer name',
+            hintText: 'Name on the bill',
+            prefixIcon: const Icon(Icons.person_outline),
+            errorText: nameProblem,
+            helperText: 'Needed for every order.',
+          ),
+          onChanged: context.read<CheckoutController>().setCustomerName,
+        ),
+        const SizedBox(height: 16),
         TextField(
           controller: _phoneField,
           keyboardType: TextInputType.phone,
@@ -357,10 +371,8 @@ class _CustomerInfoFieldsState extends State<_CustomerInfoFields> {
             labelText: 'Phone number',
             hintText: '${CustomerPhone.digits} digits',
             prefixIcon: const Icon(Icons.phone_outlined),
-            errorText: problem,
-            helperText: controller.requiresCustomerPhone
-                ? 'Needed because this order leaves the outlet.'
-                : 'Leave empty for a walk-in.',
+            errorText: phoneProblem,
+            helperText: 'Needed for every order.',
           ),
           onChanged: context.read<CheckoutController>().setCustomerPhone,
         ),
@@ -368,17 +380,6 @@ class _CustomerInfoFieldsState extends State<_CustomerInfoFields> {
           const SizedBox(height: 8),
           _ReturningCustomerNote(customer: controller.knownCustomer!),
         ],
-        const SizedBox(height: 16),
-        TextField(
-          controller: _nameField,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'Customer Name (Optional)',
-            hintText: 'Name to print on receipt',
-            prefixIcon: Icon(Icons.person_outline),
-          ),
-          onChanged: context.read<CheckoutController>().setCustomerName,
-        ),
       ],
     );
   }

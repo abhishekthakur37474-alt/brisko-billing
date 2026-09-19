@@ -262,6 +262,25 @@ class BillDetailController extends ChangeNotifier {
   /// The number recorded for the customer, or `null` for a walk-in.
   String? get customerPhone => _customer?.phone;
 
+  /// The name recorded for the customer, or `null` when none was stored.
+  String? get customerName {
+    final String? name = _customer?.name?.trim();
+    return name == null || name.isEmpty ? null : name;
+  }
+
+  /// What the bill shows for the customer: the name when one was stored.
+  String get customerDisplayName {
+    final String? name = customerName;
+    if (name != null) {
+      return name;
+    }
+    final String? phone = customerPhone;
+    if (phone == null) {
+      return 'Walk-in';
+    }
+    return phone;
+  }
+
   /// How the bill was paid, or `null` when no settled tender is stored.
   ///
   /// The first settled tender. Split payment is a later feature, and this is the line

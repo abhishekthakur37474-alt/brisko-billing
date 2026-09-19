@@ -87,16 +87,17 @@ class CheckoutConfirmStep extends StatelessWidget {
 
   /// The customer as the bill will record them.
   ///
-  /// Reads the normalised number rather than the keystrokes, and says `Walk-in` when
-  /// there is none. Never shows a number the bill would not carry.
+  /// The name is what the bill shows. The number is how they are found again.
   static String _customerLabel(CheckoutController controller) {
+    final String name = controller.trimmedCustomerName;
+    if (name.isNotEmpty) {
+      return name;
+    }
     final String? stored = controller.normalisedCustomerPhone;
     if (stored == null) {
       return 'Walk-in';
     }
-    final String? name = controller.knownCustomer?.name?.trim();
-    final String number = CustomerPhone.forDisplay(stored);
-    return name == null || name.isEmpty ? number : '$name  $number';
+    return CustomerPhone.forDisplay(stored);
   }
 }
 

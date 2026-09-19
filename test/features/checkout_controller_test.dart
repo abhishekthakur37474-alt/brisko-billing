@@ -75,6 +75,16 @@ void main() {
     quantity: quantity,
   );
 
+  /// Name and number every order now requires before payment.
+  void fillCustomer(
+    CheckoutController controller, {
+    String name = 'Test Customer',
+    String phone = '9000000001',
+  }) {
+    controller.setCustomerName(name);
+    controller.setCustomerPhone(phone);
+  }
+
   /// A checkout over whatever is currently in the billing cart.
   CheckoutController openCheckout() {
     final CheckoutController controller = CheckoutController(
@@ -102,6 +112,7 @@ void main() {
   }) async {
     await ringUpPizza();
     final CheckoutController controller = openCheckout();
+    fillCustomer(controller);
     controller.goToPayment();
     controller.selectPaymentMethod(method);
     if (method == PaymentMethod.cash) {
@@ -174,6 +185,7 @@ void main() {
       await ringUpPizza();
       final CheckoutController controller = openCheckout();
 
+      fillCustomer(controller);
       expect(controller.canProceedToPayment, isTrue);
       controller.goToPayment();
       expect(controller.step, CheckoutStep.payment);
@@ -225,24 +237,31 @@ void main() {
   });
 
   group('the customer', () {
-    test('a walk-in needs no phone number', () async {
+    test('every order needs a name and a phone number', () async {
       await ringUpPizza();
       final CheckoutController controller = openCheckout();
 
       expect(controller.orderType, OrderType.takeaway);
-      expect(controller.requiresCustomerPhone, isFalse);
       expect(controller.hasCustomerPhone, isFalse);
+      expect(controller.hasCustomerName, isFalse);
+      expect(controller.isCustomerAcceptable, isFalse);
+      expect(controller.canProceedToPayment, isFalse);
+
+      controller.setCustomerPhone('9000000001');
+      expect(controller.canProceedToPayment, isFalse);
+
+      controller.setCustomerName('Ravi');
       expect(controller.isCustomerAcceptable, isTrue);
       expect(controller.canProceedToPayment, isTrue);
     });
 
-    test('an order that leaves the outlet needs a phone number', () async {
+    test('an order that leaves the outlet still needs both', () async {
       await ringUpPizza();
       final CheckoutController controller = openCheckout();
 
       controller.selectOrderType(OrderType.delivery);
+      controller.setCustomerName('Ravi');
 
-      expect(controller.requiresCustomerPhone, isTrue);
       expect(controller.canProceedToPayment, isFalse);
 
       controller.setCustomerPhone('9000000001');
@@ -359,7 +378,7 @@ void main() {
     test('the customer is created and linked to the bill', () async {
       await ringUpPizza();
       final CheckoutController controller = openCheckout();
-      controller.setCustomerPhone('9000000001');
+      fillCustomer(controller, name: 'Ravi', phone: '9000000001');
       controller.goToPayment();
       controller.selectPaymentMethod(PaymentMethod.card);
       controller.goToConfirm();
@@ -372,6 +391,7 @@ void main() {
       final Customer customer = (await customers.findByPhone('9000000001'))
           .valueOrNull!;
       expect(order.customerId, customer.id);
+      expect(customer.name, 'Ravi');
       expect(
         (await orders.loadOrdersForCustomer(customer.id)).valueOrNull,
         hasLength(1),
@@ -386,7 +406,7 @@ void main() {
 
       await ringUpPizza();
       final CheckoutController controller = openCheckout();
-      controller.setCustomerPhone('9000000002');
+      fillCustomer(controller, name: 'Regular', phone: '9000000002');
       controller.goToPayment();
       controller.selectPaymentMethod(PaymentMethod.upi);
       controller.goToConfirm();
@@ -397,19 +417,23 @@ void main() {
       expect(await rowCount('customers'), 1);
     });
 
-    test('a walk-in bill records no customer', () async {
+    test('a settled bill records the customer name', () async {
       final CheckoutController controller = await readyToCharge();
 
       await controller.submit();
 
-      expect(controller.settledOrder!.customerId, isNull);
-      expect(await rowCount('customers'), 0);
+      expect(controller.settledOrder!.customerId, isNotNull);
+      final Customer customer = (await customers.findById(
+        controller.settledOrder!.customerId!,
+      )).valueOrNull!;
+      expect(customer.name, 'Test Customer');
+      expect(customer.phone, '9000000001');
     });
 
     test('a failed charge leaves no customer behind', () async {
       await ringUpPizza();
       final CheckoutController controller = openCheckout();
-      controller.setCustomerPhone('9000000003');
+      fillCustomer(controller, name: 'Ravi', phone: '9000000003');
       controller.goToPayment();
       controller.selectPaymentMethod(PaymentMethod.upi);
       controller.goToConfirm();
@@ -477,7 +501,7 @@ void main() {
     test('the number is stored normalised, however it was typed', () async {
       await ringUpPizza();
       final CheckoutController controller = openCheckout();
-      controller.setCustomerPhone('+91 98765 43210');
+      fillCustomer(controller, name: 'Ravi', phone: '+91 98765 43210');
       controller.goToPayment();
       controller.selectPaymentMethod(PaymentMethod.upi);
       controller.goToConfirm();

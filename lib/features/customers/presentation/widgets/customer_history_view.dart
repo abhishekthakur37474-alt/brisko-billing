@@ -82,12 +82,14 @@ class _HistoryHeader extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      CustomerPhone.forDisplay(controller.phone ?? ''),
+                      name == null || name.isEmpty
+                          ? CustomerPhone.forDisplay(controller.phone ?? '')
+                          : name,
                       style: theme.textTheme.titleLarge,
                     ),
                     if (name != null && name.isNotEmpty)
                       Text(
-                        name,
+                        CustomerPhone.forDisplay(controller.phone ?? ''),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),

@@ -15,8 +15,8 @@ class ManagerAuthService {
   final SettingsRepository settings;
 
   /// Verifies the provided plaintext password against the stored hash.
-  /// 
-  /// Returns `true` if the password is correct or if no manager password has been set yet.
+  ///
+  /// Returns `true` only when a password is stored and [plaintext] matches it.
   Future<Result<bool>> verifyPassword(String plaintext) async {
     final Result<String?> stored = await settings.readString(keyManagerPassword);
     if (stored.isErr) {

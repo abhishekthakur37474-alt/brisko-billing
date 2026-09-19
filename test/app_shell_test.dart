@@ -44,6 +44,26 @@ void main() {
       await tester.pump();
     });
 
+    testWidgets('the rail fits every section on a short counter display', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(1600, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(BriskoApp(dependencies: dependencies));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text(PosSection.manager.label), findsWidgets);
+      expect(find.text(PosSection.settings.label), findsWidgets);
+
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+    });
+
     testWidgets('navigating the rail swaps the active section', (
       WidgetTester tester,
     ) async {
@@ -54,7 +74,7 @@ void main() {
 
       await tester.pumpWidget(BriskoApp(dependencies: dependencies));
 
-      expect(find.byType(NavigationRail), findsOneWidget);
+      expect(find.text(PosSection.manager.label), findsWidgets);
 
       await tester.tap(find.text(PosSection.reports.label));
       await tester.pumpAndSettle();

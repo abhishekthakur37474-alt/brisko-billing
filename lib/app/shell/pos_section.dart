@@ -41,15 +41,20 @@ enum PosSection {
     icon: Icons.bar_chart_outlined,
     selectedIcon: Icons.bar_chart,
   ),
-  settings(
-    label: 'Settings',
-    icon: Icons.settings_outlined,
-    selectedIcon: Icons.settings,
-  ),
   expenses(
     label: 'Expenses',
     icon: Icons.attach_money_outlined,
     selectedIcon: Icons.attach_money,
+  ),
+  manager(
+    label: 'Manager',
+    icon: Icons.admin_panel_settings_outlined,
+    selectedIcon: Icons.admin_panel_settings,
+  ),
+  settings(
+    label: 'Settings',
+    icon: Icons.settings_outlined,
+    selectedIcon: Icons.settings,
   );
 
   const PosSection({

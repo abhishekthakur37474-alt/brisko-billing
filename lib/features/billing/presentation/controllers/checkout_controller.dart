@@ -355,35 +355,38 @@ class CheckoutController extends ChangeNotifier {
   bool get hasBill => _cart.isNotEmpty && _totals.isPayable;
 
   /// True when the order type means the customer has to be contactable.
-  bool get requiresCustomerPhone => _orderType.isOffPremises;
+  bool get requiresCustomerPhone => true;
 
   bool get hasCustomerPhone => _customerPhone.isNotEmpty;
-  
+
   String get customerName => _customerName;
+
+  String get trimmedCustomerName => _customerName.trim();
+
+  bool get hasCustomerName => trimmedCustomerName.isNotEmpty;
 
   /// True when what has been entered reduces to a number that can be stored.
   bool get isCustomerPhoneComplete => normalisedCustomerPhone != null;
 
-  /// True when the phone entry is acceptable: usable, or absent when optional.
-  bool get isCustomerAcceptable {
-    if (requiresCustomerPhone) {
-      return isCustomerPhoneComplete;
-    }
-    return !hasCustomerPhone || isCustomerPhoneComplete;
-  }
+  /// True when both the name and a usable phone number have been entered.
+  bool get isCustomerAcceptable =>
+      hasCustomerName && isCustomerPhoneComplete;
 
   /// What is wrong with the number entered, or `null` when there is nothing to say.
   ///
-  /// Empty is not a problem for a walk-in, so it reports nothing. Anything else that
-  /// cannot be stored says what is wanted instead, because the alternative — a silently
-  /// shortened number — files the bill under a stranger.
+  /// A missing or unusable number always blocks the sale. Anything that cannot be stored
+  /// says what is wanted instead, because the alternative — a silently shortened number
+  /// — files the bill under a stranger.
   String? get customerPhoneProblem {
     if (!hasCustomerPhone) {
-      return requiresCustomerPhone
-          ? 'This order leaves the outlet, so a number is needed'
-          : null;
+      return 'A phone number is needed for every order.';
     }
     return isCustomerPhoneComplete ? null : CustomerPhone.requirement;
+  }
+
+  /// What is wrong with the name entered, or `null` when there is nothing to say.
+  String? get customerNameProblem {
+    return hasCustomerName ? null : 'A name is needed for every order.';
   }
 
   /// True when the review step is complete enough to take payment.

@@ -128,12 +128,14 @@ class _BillRow extends StatelessWidget {
   /// "Walk-in" rather than a blank line. A missing customer is a fact about the bill, and
   /// an empty space looks like a rendering fault.
   String _who() {
+    final String? name = bill.customerName?.trim();
+    if (name != null && name.isNotEmpty) {
+      return name;
+    }
     final String? phone = bill.customerPhone;
     if (phone == null) {
       return 'Walk-in';
     }
-    final String? name = bill.customerName?.trim();
-    final String number = CustomerPhone.forDisplay(phone);
-    return name == null || name.isEmpty ? number : '$name  ·  $number';
+    return CustomerPhone.forDisplay(phone);
   }
 }

@@ -7,7 +7,6 @@ import '../../../../core/money/money.dart';
 import '../../../../core/money/money_display.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/domain/services/manager_auth_service.dart';
-import '../../../customers/domain/models/customer_phone.dart';
 import '../../../customers/domain/repositories/customer_repository.dart';
 import '../../../payments/domain/models/payment_method.dart';
 import '../../../payments/domain/models/refund.dart';
@@ -654,8 +653,6 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String? phone = controller.customerPhone;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -667,7 +664,7 @@ class _Header extends StatelessWidget {
         _DetailRow(label: 'Order type', value: order.orderType.label),
         _DetailRow(
           label: 'Customer',
-          value: phone == null ? 'Walk-in' : CustomerPhone.forDisplay(phone),
+          value: controller.customerDisplayName,
         ),
         _DetailRow(label: 'Status', value: order.status.label),
         if (order.notes != null && order.notes!.trim().isNotEmpty)
