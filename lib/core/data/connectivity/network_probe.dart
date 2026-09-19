@@ -25,7 +25,8 @@ class HostLookupProbe implements NetworkProbe {
   const HostLookupProbe({this.host, this.timeout = const Duration(seconds: 5)});
 
   /// Host name of the configured cloud backend, for example
-  /// `firestore.googleapis.com`. `null` when no backend is configured.
+  /// `brisko-billing-default-rtdb.asia-southeast1.firebasedatabase.app`.
+  /// `null` when no backend is configured.
   final String? host;
 
   final Duration timeout;

@@ -368,12 +368,12 @@ Future<AppDependencies> bootstrap({
     database: database,
   );
 
-  // The Firestore host is a constant, so the connectivity probe targets it whenever the
+  // The RTDB host is a constant, so the connectivity probe targets it whenever the
   // build has a project — even before sign-in — so that a sync started on login notices
   // the link straight away. A local-only build has no host and reads as offline.
   final PollingConnectivityMonitor connectivity = PollingConnectivityMonitor(
     probe: HostLookupProbe(
-      host: isCloudConfigured ? FirebaseConfig.firestoreHost : null,
+      host: isCloudConfigured ? FirebaseConfig.rtdbHost : null,
     ),
   );
 

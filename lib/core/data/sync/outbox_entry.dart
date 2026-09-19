@@ -27,7 +27,7 @@ class OutboxEntry {
   final String id;
 
   /// Logical collection the entity belongs to, for example `bills` or
-  /// `menu_items`. Maps to a Firestore collection later.
+  /// `menu_items`. Maps to an RTDB node later.
   final String collection;
 
   /// Identity of the entity being written.

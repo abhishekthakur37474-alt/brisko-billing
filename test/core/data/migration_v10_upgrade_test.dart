@@ -61,7 +61,7 @@ void main() {
 
     expect(await database.database.getVersion(), SqliteDatabase.schemaVersion);
     expect(const M010CloudSyncMetadata().version, 10);
-    expect(SqliteDatabase.schemaVersion, 11);
+    expect(SqliteDatabase.schemaVersion, 13);
   });
 
   test('the sync_metadata table is created', () async {
@@ -101,10 +101,11 @@ void main() {
       where: 'id = ?',
       whereArgs: <Object?>[orderId],
     )).single;
-    // An additive migration touches no row.
+    // Amounts and timestamps are untouched. v13 requeues previously synced rows
+    // so they upload to Realtime Database.
     expect(row['createdAt'], billedAt.millisecondsSinceEpoch);
     expect(row['updatedAt'], billedAt.millisecondsSinceEpoch);
-    expect(row['syncState'], 'synced');
+    expect(row['syncState'], 'pending');
   });
 
   test('foreign keys hold across the upgraded database', () async {

@@ -17,7 +17,7 @@ Local SQLite is the source of truth for writes. Cloud backup is optional and nev
 | Currency | INR (paise as integer; displayed as ₹) |
 | Primary target | Windows 10/11 x64 counter terminal |
 | Also compiled for | macOS, Linux, Android, iOS, Web |
-| Cloud | Optional Firebase (Firestore + Auth over HTTPS REST) |
+| Cloud | Optional Firebase (Realtime Database + Auth over HTTPS REST) |
 | Printer | 80mm ESC/POS thermal (TVS RP 3200 Lite USB, or LAN) |
 
 ---
@@ -56,7 +56,7 @@ Local SQLite is the source of truth for writes. Cloud backup is optional and nev
 ### Cloud (optional)
 
 - No FlutterFire / native Firebase plugins
-- Thin `dart:io` HTTPS clients for Firebase Authentication and Cloud Firestore REST
+- Thin `dart:io` HTTPS clients for Firebase Authentication and Realtime Database REST
 - **crypto** `^3.0.7` — hashing used on the client
 - Project id and Web API key baked at build time via `--dart-define`
 - Session is a refresh token persisted locally; password is never stored
@@ -82,7 +82,7 @@ lib/
     constants/ theme/ error/ money/ utils/
     data/
       local/sqlite/          the only place SQL lives
-      remote/firebase/       REST Auth + Firestore, or no-op
+      remote/firebase/       REST Auth + Realtime Database, or no-op
       sync/                  outbox, coordinator, initial restore
       connectivity/          host-lookup probe
   features/<feature>/
@@ -389,9 +389,9 @@ Without those, the app is fully local: no login, no upload.
 | Piece | How |
 |---|---|
 | Auth | Email/password over Firebase Auth REST. Session = refresh token in settings table |
-| Data | Cloud Firestore REST. One document per SQLite entity, keyed by device-generated id |
+| Data | Realtime Database REST. One node per SQLite entity, keyed by device-generated id |
 | Isolation | `restaurants/{uid}/…` — restaurant id **is** the Auth uid. Rules deny everything else |
-| Connectivity | DNS probe of `firestore.googleapis.com` |
+| Connectivity | DNS probe of `brisko-billing-default-rtdb.asia-southeast1.firebasedatabase.app` |
 | Sync | Push outbox, then pull; last-write-wins on `updatedAt` |
 | Restore | Initial sync only on a terminal with no operational rows (no bills yet) |
 
@@ -399,7 +399,7 @@ Synced collections (dependency order): categories, menu items, variants, options
 
 **Not synced:** held bills, settings, printer state, expenses.
 
-Project config in-repo: `.firebaserc` (`brisko-billing`), `firebase.json`, `firebase/firestore.rules`, `firebase/README.md`.
+Project config in-repo: `.firebaserc` (`brisko-billing`), `firebase.json`, `firebase/database.rules.json`, `firebase/README.md`.
 
 ### 3. Thermal printers
 
@@ -487,7 +487,7 @@ Operator docs: `OPERATOR_GUIDE.md`. Client install: `CLIENT_SETUP.md`. Cloud set
 lib/                 application code
 test/                unit / widget / integration tests
 assets/images/       receipt logo
-firebase/            Firestore rules and cloud README
+firebase/            Realtime Database rules and cloud README
 android ios linux macos windows web/   platform runners
 dist/                Windows release output (when packaged)
 pubspec.yaml

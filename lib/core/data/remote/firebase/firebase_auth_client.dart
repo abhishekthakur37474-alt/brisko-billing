@@ -16,7 +16,7 @@ class FirebaseAuthTokens {
     required this.expiresAt,
   });
 
-  /// The bearer credential for Firestore requests. Expires within the hour.
+  /// The bearer credential for Realtime Database requests. Expires within the hour.
   final String idToken;
 
   /// The long-lived session, exchanged for a new [idToken] when this one nears

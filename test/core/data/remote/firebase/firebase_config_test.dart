@@ -37,7 +37,7 @@ void main() {
         refreshToken: 'refresh-token',
       );
       expect(full.isConfigured, isTrue);
-      expect(full.host, FirebaseConfig.firestoreHost);
+      expect(full.host, FirebaseConfig.rtdbHost);
     });
 
     test(

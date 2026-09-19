@@ -5,7 +5,7 @@ import '../../../utils/result.dart';
 import 'firebase_auth_client.dart';
 import 'firebase_config.dart';
 
-/// The signed-in context a Firestore request needs: which restaurant it may touch,
+/// The signed-in context an RTDB request needs: which restaurant it may touch,
 /// and the bearer token proving it.
 class FirebaseAuthContext {
   const FirebaseAuthContext({
@@ -26,7 +26,7 @@ class FirebaseAuthContext {
 ///
 /// The terminal is configured with a long-lived refresh token, not a password. This
 /// session exchanges it for a short-lived ID token, caches that token with its expiry,
-/// and refreshes it just before it lapses — so the Firestore client can ask for a valid
+/// and refreshes it just before it lapses — so the RTDB client can ask for a valid
 /// credential on every call without knowing anything about token lifetimes.
 ///
 /// It is deliberately conservative about failure. A refresh that cannot reach the

@@ -50,10 +50,10 @@ void main() {
     print('[VERIFIED 2] Cloud backend is Configured: projectId=$projectId');
 
     // 3. Verify Cloud connection is Online
-    final HostLookupProbe probe = HostLookupProbe(host: FirebaseConfig.firestoreHost);
-    final bool canReachFirestore = await probe.isReachable();
-    expect(canReachFirestore, isTrue, reason: '3. Host firestore.googleapis.com must be reachable');
-    print('[VERIFIED 3] Cloud connection is Online: reachable=${FirebaseConfig.firestoreHost}');
+    final HostLookupProbe probe = HostLookupProbe(host: FirebaseConfig.rtdbHost);
+    final bool canReachRtdb = await probe.isReachable();
+    expect(canReachRtdb, isTrue, reason: '3. Host ${FirebaseConfig.rtdbHost} must be reachable');
+    print('[VERIFIED 3] Cloud connection is Online: reachable=${FirebaseConfig.rtdbHost}');
     await database.close();
 
     final dependencies = await bootstrap(

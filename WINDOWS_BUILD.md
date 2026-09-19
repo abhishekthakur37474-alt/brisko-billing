@@ -34,7 +34,7 @@ Local-only build (no cloud; the app opens straight to the till, no login screen)
 flutter build windows --release
 ```
 
-Cloud-connected build (adds the login screen and Firestore sync). Supply the project's
+Cloud-connected build (adds the login screen and Realtime Database sync). Supply the project's
 **client-safe** values as compile-time defines — they are baked into the build, the same
 for every terminal, and are never typed into the app:
 
@@ -45,7 +45,7 @@ flutter build windows --release ^
 ```
 
 > The Firebase **service-account key is never used here.** Only the project id and Web API
-> key are client-safe. Access is controlled server-side by `firebase/firestore.rules`.
+> key are client-safe. Access is controlled server-side by `firebase/database.rules.json`.
 > See `firebase/README.md` for creating the terminal's login user.
 
 The build output is the **complete** application directory:

@@ -5,8 +5,8 @@ import '../sync/syncable_entity.dart';
 import 'firebase/firebase_auth_client.dart';
 import 'firebase/firebase_auth_session.dart';
 import 'firebase/firebase_config.dart';
-import 'firebase/firestore_remote_store.dart';
-import 'firebase/firestore_rest_client.dart';
+import 'firebase/rtdb_remote_store.dart';
+import 'firebase/rtdb_rest_client.dart';
 import 'noop_remote_store.dart';
 
 /// Builds a [RemoteStore] per collection.
@@ -47,18 +47,18 @@ class NoopRemoteStoreFactory implements RemoteStoreFactory {
 /// The factory for a configured Firebase backend.
 ///
 /// It owns the whole cloud transport for the terminal: one [HttpClient] shared across
-/// every collection's store, and one [FirestoreRestClient] that turns rows into Firestore
-/// documents scoped to the signed-in restaurant. Sharing them means all collections reuse
-/// a single connection pool and a single session refresh.
+/// every collection's store, and one [RtdbRestClient] that turns rows into Realtime
+/// Database nodes scoped to the signed-in restaurant. Sharing them means all collections
+/// reuse a single connection pool and a single session refresh.
 ///
-/// The [FirestoreRestClient] — and the [FirebaseAuthSession] inside it — are supplied
+/// The [RtdbRestClient] — and the [FirebaseAuthSession] inside it — are supplied
 /// rather than built here, because the same session must also be reachable by the sign-in
 /// flow: logging in adopts a session into it and signing out clears it, and both must be
 /// seen by every store this factory hands out. See [FirebaseRemoteStoreFactory.new].
 class FirebaseRemoteStoreFactory implements RemoteStoreFactory {
   /// Builds a factory over the whole Firebase transport for [config].
   ///
-  /// One [HttpClient], one [FirebaseAuthSession], one [FirestoreRestClient], all shared.
+  /// One [HttpClient], one [FirebaseAuthSession], one [RtdbRestClient], all shared.
   /// The session is returned in [session] so the sign-in flow can adopt and clear it; the
   /// auth client is returned in [authClient] so the login screen can exchange an email and
   /// password for a session on the very same connection pool.
@@ -76,7 +76,7 @@ class FirebaseRemoteStoreFactory implements RemoteStoreFactory {
       httpClient: httpClient,
       authClient: authClient,
       session: session,
-      client: FirestoreRestClient(
+      client: RtdbRestClient(
         config: config,
         httpClient: httpClient,
         session: session,
@@ -88,7 +88,7 @@ class FirebaseRemoteStoreFactory implements RemoteStoreFactory {
     required HttpClient httpClient,
     required this.authClient,
     required this.session,
-    required FirestoreRestClient client,
+    required RtdbRestClient client,
   }) : _httpClient = httpClient,
        _client = client;
   // The two private fields are assigned here rather than as initializing formals to keep
@@ -96,7 +96,7 @@ class FirebaseRemoteStoreFactory implements RemoteStoreFactory {
   // ignore_for_file: prefer_initializing_formals
 
   final HttpClient _httpClient;
-  final FirestoreRestClient _client;
+  final RtdbRestClient _client;
 
   /// The auth client the sign-in screen uses to exchange an email and password for a
   /// session, on the same connection pool as the sync transport.
@@ -110,7 +110,7 @@ class FirebaseRemoteStoreFactory implements RemoteStoreFactory {
   RemoteStore<T> create<T extends SyncableEntity>(
     String table,
     T Function(Map<String, Object?> row) fromRow,
-  ) => FirestoreRemoteStore<T>(
+  ) => RtdbRemoteStore<T>(
     client: _client,
     collection: table,
     fromRow: fromRow,

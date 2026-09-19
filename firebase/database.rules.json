@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "restaurants": {
+      "$restaurantId": {
+        ".read": "auth != null && auth.uid == $restaurantId",
+        ".write": "auth != null && auth.uid == $restaurantId"
+      }
+    }
+  }
+}

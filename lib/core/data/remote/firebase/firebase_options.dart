@@ -22,8 +22,8 @@ import 'firebase_config.dart';
 ///
 /// Both are **client-safe** by design: a Firebase Web API key and project id are meant to
 /// ship in client applications. They grant nothing on their own — access is controlled by
-/// Firestore Security Rules on the server, which require a signed-in user whose `uid`
-/// matches the restaurant document. The privileged service-account key is never part of
+/// Realtime Database Security Rules on the server, which require a signed-in user whose
+/// `uid` matches the restaurant node. The privileged service-account key is never part of
 /// the application, in configuration or in source.
 ///
 /// ## The default is "no cloud"
@@ -60,7 +60,7 @@ class FirebaseOptions {
   ///
   /// Hardcoded so a plain `flutter run` / `flutter build` is cloud-connected without
   /// `--dart-define`. Both values are client-safe; access is still enforced by
-  /// Firestore Security Rules.
+  /// Realtime Database Security Rules.
   static const FirebaseOptions current = FirebaseOptions(
     projectId: 'brisko-billing',
     apiKey: 'AIzaSyDk8DOD4n2P7Bzrj3Cay_DwBKV2s-xOOew',

@@ -21,7 +21,7 @@ enum FakeCloudMode {
   unavailable,
 }
 
-/// An in-memory stand-in for the Firebase/Firestore backend, shared across every
+/// An in-memory stand-in for the Firebase/RTDB backend, shared across every
 /// collection's store.
 ///
 /// It stores rows exactly as the real backend would — the entity's `toMap`, keyed
@@ -29,7 +29,7 @@ enum FakeCloudMode {
 /// uses, and a record seeded here is indistinguishable from one another terminal
 /// uploaded. That is what lets the download and restore paths be tested without a
 /// network. It is backend-agnostic on purpose: it exercises the sync engine through
-/// the same `RemoteStore` seam the real Firestore store implements.
+/// the same `RemoteStore` seam the real RTDB store implements.
 class FakeCloud {
   FakeCloud({this.mode = FakeCloudMode.online});
 

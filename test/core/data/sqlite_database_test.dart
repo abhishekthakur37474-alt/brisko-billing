@@ -32,12 +32,8 @@ void main() {
     test('reports the schema version the migrations define', () async {
       final int version = await database.database.getVersion();
       expect(version, SqliteDatabase.schemaVersion);
-      // Eleven migrations: the schema, the category seed, the product seed, the
-      // option scope columns, the KOT order snapshots, recipes with automatic
-      // stock deduction, held bills, refunds, the GST rate and discount rule a
-      // bill was settled with, the cloud synchronisation bookmarks, and the 
-      // new combos/ketchup scoping.
-      expect(SqliteDatabase.schemaVersion, 11);
+      // Thirteen migrations: schema through expenses, then the RTDB resync.
+      expect(SqliteDatabase.schemaVersion, 13);
     });
 
     test('creates every table the POS needs', () async {

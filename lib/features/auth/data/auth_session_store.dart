@@ -31,7 +31,7 @@ class PersistedSession {
 /// The whole cloud layer is deliberately free of native plugins so the desktop build needs
 /// no CocoaPods and the sync path can be tested without a device. A platform keychain would
 /// reintroduce exactly that dependency for a token that, on its own, grants access to
-/// nothing: Firestore Security Rules require the session to resolve to this restaurant's
+/// nothing: Realtime Database Security Rules require the session to resolve to this restaurant's
 /// own `uid`, and the token is useless against any other restaurant's data. Persisting it
 /// beside the other local configuration keeps the terminal offline-capable and the design
 /// consistent, and it is the same session mechanism Step 17 already used.
