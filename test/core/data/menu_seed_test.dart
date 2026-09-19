@@ -368,7 +368,7 @@ void main() {
               .valueOrNull!
               .length;
         }
-        expect(total, 7);
+        expect(total, 9);
       },
     );
   });
@@ -418,35 +418,38 @@ void main() {
       expect(byName['Ketchup'], MenuOptionType.condiment);
     });
 
-    test('Ketchup is the only global option', () async {
-      // The only option the menu prices flat, so the only one whose price does not
-      // depend on the size chosen.
+    test('there are no global options', () async {
       final List<MenuItemOption> options =
           (await repository.loadAllOptions()).valueOrNull!;
       final Iterable<MenuItemOption> global = options.where(
         (MenuItemOption o) => o.isGlobal,
       );
 
-      expect(global.map((MenuItemOption o) => o.name), <String>['Ketchup']);
-      expect(global.single.price, Money.parse('10'));
-      expect(global.single.scope, MenuOptionScope.global);
+      expect(global, isEmpty);
     });
 
-    test('every other option is scoped to one pizza size', () async {
+    test('options are scoped to a variant or category', () async {
       final List<MenuItemOption> options =
           (await repository.loadAllOptions()).valueOrNull!;
-      final Iterable<MenuItemOption> scoped = options.where(
-        (MenuItemOption o) => !o.isGlobal,
+      final Iterable<MenuItemOption> variantScoped = options.where(
+        (MenuItemOption o) => o.scope == MenuOptionScope.variant,
+      );
+      final Iterable<MenuItemOption> categoryScoped = options.where(
+        (MenuItemOption o) => o.scope == MenuOptionScope.category,
       );
 
       // Seventeen pizzas x ten priced option cells.
-      expect(scoped, hasLength(170));
+      expect(variantScoped, hasLength(170));
+      // 9 food categories have Ketchup
+      expect(categoryScoped, hasLength(9));
       expect(
-        scoped.every((MenuItemOption o) => o.scope == MenuOptionScope.variant),
+        variantScoped.every((MenuItemOption o) => o.isSizeSpecific),
         isTrue,
       );
-      expect(scoped.every((MenuItemOption o) => o.isSizeSpecific), isTrue);
-      expect(scoped.every((MenuItemOption o) => o.variantId != null), isTrue);
+      expect(
+        categoryScoped.every((MenuItemOption o) => o.categoryId != null),
+        isTrue,
+      );
     });
 
     test('asking by item returns only size-independent options', () async {
@@ -485,20 +488,20 @@ void main() {
   group('totals', () {
     test('the seed loads the whole menu', () async {
       expect(MenuSeedData.categories, hasLength(12));
-      expect(MenuSeedData.items, hasLength(64));
+      expect(MenuSeedData.items, hasLength(66));
       // 17 pizzas x 3 sizes, plus 4 cold drink sizes.
       expect(MenuSeedData.variants, hasLength(55));
-      // 17 pizzas x 10 priced option cells, plus the one global option.
-      expect(MenuSeedData.options, hasLength(171));
+      // 17 pizzas x 10 priced option cells, plus the 9 scoped ketchup options.
+      expect(MenuSeedData.options, hasLength(179));
       expect(MenuSeedData.hasProducts, isTrue);
 
       expect(await countRows(SqliteTables.categories), 12);
-      expect(await countRows(SqliteTables.menuItems), 64);
+      expect(await countRows(SqliteTables.menuItems), 66);
       expect(await countRows(SqliteTables.menuItemVariants), 55);
       // A fresh database holds only the scoped rows. An upgraded one also carries
       // the ten retired rows, soft-deleted and invisible to every read.
-      expect(await countRows(SqliteTables.menuItemOptions), 171);
-      expect((await repository.loadAllOptions()).valueOrNull, hasLength(171));
+      expect(await countRows(SqliteTables.menuItemOptions), 179);
+      expect((await repository.loadAllOptions()).valueOrNull, hasLength(179));
     });
 
     test('every item belongs to a seeded category', () async {

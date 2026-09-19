@@ -150,6 +150,52 @@ void main() {
       // Completes without throwing.
       await transport.write(Uint8List.fromList(<int>[1]), jobName: 'R');
     });
+
+    // Regression: the first customer receipt after a KOT came out with garbage near the
+    // logo, while an isolated reprint was clean. The cause was completion detection that
+    // treated a raw job as done the instant it left the CUPS *queue* — at which point the
+    // bytes are in the printer's own input buffer, still draining. The next document, the
+    // receipt with its multi-kilobyte logo raster, was then submitted into a buffer the
+    // KOT had not finished, overrunning it. write() must not return until the printer is
+    // idle again, not merely until the queue is empty.
+    test(
+      'write waits for the printer to finish draining, not just to leave the queue',
+      () async {
+        final ScriptedCups cups = ScriptedCups()
+          ..lp.add(
+            const CommandResult(
+              exitCode: 0,
+              stdout: 'request id is TVS-10 (1 file(s))',
+            ),
+          )
+          // The job has already left the queue on the first poll...
+          ..lpstatO.add(const CommandResult(exitCode: 0, stdout: ''))
+          ..lpstatO.add(const CommandResult(exitCode: 0, stdout: ''))
+          // ...but the printer is still receiving it ("now printing … Sending data")
+          // for two polls, then returns to idle. open() consumes the first -p (idle).
+          ..lpstatP.add(_idle('TVS'))
+          ..lpstatP.add(_processing('TVS'))
+          ..lpstatP.add(_processing('TVS'))
+          ..lpstatP.add(_idle('TVS'));
+        final CupsRawPrintTransport transport = _transport(cups, queue: 'TVS');
+        await transport.open();
+
+        await transport.write(Uint8List.fromList(<int>[1]), jobName: 'R');
+
+        // It kept polling the printer state until it read idle rather than returning on
+        // the empty queue. Three -p polls happened inside write() (processing,
+        // processing, idle) on top of the one open() made.
+        final int queueStatePolls = cups.calls
+            .where(
+              (List<String> call) =>
+                  call.length >= 2 &&
+                  call[0] == 'lpstat' &&
+                  call[1] == '-p',
+            )
+            .length;
+        expect(queueStatePolls, greaterThanOrEqualTo(4));
+      },
+    );
   });
 
   group('default queue resolution', () {
@@ -229,6 +275,15 @@ CupsRawPrintTransport _transport(ScriptedCups cups, {required String? queue}) =>
 
 CommandResult _idle(String queue) =>
     CommandResult(exitCode: 0, stdout: 'printer $queue is idle.  enabled since now');
+
+/// The printer is enabled but still receiving the current document, which is exactly
+/// what CUPS reports on this hardware while the buffer is draining.
+CommandResult _processing(String queue) => CommandResult(
+  exitCode: 0,
+  stdout:
+      'printer $queue now printing $queue-1.  enabled since now\n'
+      '\tSending data to printer.',
+);
 
 CommandResult _disabled(String queue) => CommandResult(
   exitCode: 0,

@@ -111,7 +111,7 @@ void main() {
           Directory('lib/features/payments')
               .listSync(recursive: true)
               .whereType<File>()
-              .map((File file) => file.path)
+              .map((File file) => file.path.replaceAll(r'\', '/'))
               .where((String path) => path.endsWith('.dart'))
               .where((String path) => path.contains('refund'))
               .toList()

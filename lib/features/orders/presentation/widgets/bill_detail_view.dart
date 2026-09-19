@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/money/money.dart';
 import '../../../../core/money/money_display.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../auth/domain/services/manager_auth_service.dart';
 import '../../../customers/domain/models/customer_phone.dart';
 import '../../../customers/domain/repositories/customer_repository.dart';
 import '../../../payments/domain/models/payment_method.dart';
@@ -15,6 +16,7 @@ import '../../../payments/domain/repositories/payment_repository.dart';
 import '../../../payments/domain/repositories/refund_repository.dart';
 import '../../../printing/domain/print_timestamp.dart';
 import '../../../printing/domain/services/print_service.dart';
+import '../../../settings/domain/repositories/settings_repository.dart';
 import '../../domain/models/bill_line_snapshot.dart';
 import '../../domain/models/order.dart';
 import '../../domain/models/order_item_option.dart';
@@ -61,6 +63,9 @@ class BillDetailView extends StatelessWidget {
               paymentRepository: payments,
               customerRepository: customers,
               refundRepository: refunds,
+              managerAuthService: ManagerAuthService(
+                settings: context.read<SettingsRepository>(),
+              ),
               printService: printService,
             );
             // Not awaited: the first frame shows the loading state while the read runs.
@@ -147,33 +152,76 @@ class BillDetailView extends StatelessWidget {
   ) async {
     final String number = controller.orderNumber ?? '';
 
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: Text('Cancel bill $number?'),
-          content: Text(
-            'The bill is kept on the record as cancelled and any outstanding '
-            'kitchen work is stopped. No payment is reversed and stock is not '
-            'put back. This cannot be undone.',
-            style: Theme.of(dialogContext).textTheme.bodySmall,
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Keep the bill'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Cancel the bill'),
-            ),
-          ],
-        );
-      },
-    );
+    final TextEditingController passwordController = TextEditingController();
+    final TextEditingController reasonController = TextEditingController();
+    final ValueNotifier<bool> isObscured = ValueNotifier<bool>(true);
 
-    if (confirmed ?? false) {
-      await controller.cancel();
+    try {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: Text('Cancel bill $number?'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text(
+                  'The bill is kept on the record as cancelled and any outstanding '
+                  'kitchen work is stopped. No payment is reversed and stock is not '
+                  'put back. This cannot be undone.',
+                  style: Theme.of(dialogContext).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 16),
+                ValueListenableBuilder<bool>(
+                  valueListenable: isObscured,
+                  builder: (context, obscured, child) {
+                    return TextField(
+                      controller: passwordController,
+                      obscureText: obscured,
+                      decoration: InputDecoration(
+                        labelText: 'Manager Password',
+                        suffixIcon: IconButton(
+                          icon: Icon(obscured ? Icons.visibility : Icons.visibility_off),
+                          onPressed: () => isObscured.value = !obscured,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: reasonController,
+                  decoration: const InputDecoration(
+                    labelText: 'Reason (Optional)',
+                  ),
+                ),
+              ],
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Keep the bill'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Cancel the bill'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (confirmed ?? false) {
+        await controller.cancel(
+          password: passwordController.text,
+          reason: reasonController.text.trim().isEmpty ? null : reasonController.text.trim(),
+        );
+      }
+    } finally {
+      passwordController.dispose();
+      reasonController.dispose();
+      isObscured.dispose();
     }
   }
 

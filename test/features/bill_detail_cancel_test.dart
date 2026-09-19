@@ -65,6 +65,7 @@ void main() {
       paymentRepository: payments,
       customerRepository: customers,
       refundRepository: refunds,
+      managerAuthService: ManagerAuthService(settings: SettingsRepository.empty()),
       printService: printing,
     );
     addTearDown(controller.dispose);
@@ -126,7 +127,7 @@ void main() {
       final BillDetailController bill = openBill(orderId);
       await bill.load();
 
-      final bool cancelled = await bill.cancel();
+      final bool cancelled = await bill.cancel(password: '1234');
 
       expect(cancelled, isTrue);
       expect(bill.didCancel, isTrue);
@@ -143,7 +144,7 @@ void main() {
       final BillDetailController bill = openBill(orderId);
       await bill.load();
 
-      await bill.cancel();
+      await bill.cancel(password: '1234');
 
       final tickets = (await kots.loadTicketsForOrder(orderId)).valueOrNull!;
       expect(tickets, isNotEmpty);
@@ -177,7 +178,7 @@ void main() {
 
       final BillDetailController bill = openBill(orderId);
       await bill.load();
-      await bill.cancel();
+      await bill.cancel(password: '1234');
 
       final tenders = (await payments.loadForOrder(orderId)).valueOrNull!;
       expect(tenders, hasLength(before));
@@ -196,7 +197,7 @@ void main() {
       await bill.load();
 
       // The action is not even offered, so a direct call stands in for a race.
-      final bool cancelledAgain = await bill.cancel();
+      final bool cancelledAgain = await bill.cancel(password: '1234');
       expect(cancelledAgain, isFalse);
       expect(bill.hasCancelError, isTrue);
       expect(bill.cancelError, contains('already cancelled'));

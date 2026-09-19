@@ -24,6 +24,7 @@ import 'package:brisko_billing/features/payments/data/repositories/sqlite_refund
 import 'package:brisko_billing/features/payments/domain/models/payment_method.dart';
 import 'package:brisko_billing/features/printing/data/printers/unconfigured_thermal_printer.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 
 import '../helpers/seeded_cart.dart';
 import '../helpers/test_database.dart';
@@ -827,17 +828,22 @@ void main() {
 
     test('history survives closing and reopening the database', () async {
       await database.close();
-      database = await TestDatabase.openOnDisk(
-        '${Directory.systemTemp.path}/brisko_customer_history_test.db',
+      final Directory tempDir = await Directory.systemTemp.createTemp(
+        'brisko_customer_history_test',
       );
+      final String dbPath = p.join(tempDir.path, 'customer_history.db');
       addTearDown(() async {
-        final File file = File(
-          '${Directory.systemTemp.path}/brisko_customer_history_test.db',
-        );
-        if (file.existsSync()) {
-          file.deleteSync();
+        if (database.isOpen) {
+          await database.close();
+        }
+        if (tempDir.existsSync()) {
+          try {
+            tempDir.deleteSync(recursive: true);
+          } catch (_) {}
         }
       });
+
+      database = await TestDatabase.openOnDisk(dbPath);
 
       menu = SqliteMenuRepository(database: database);
       checkout = SqliteCheckoutRepository(database: database);
@@ -849,9 +855,7 @@ void main() {
       final String customerId = (await customerFor('9000000603')).id;
       await database.close();
 
-      database = await TestDatabase.openOnDisk(
-        '${Directory.systemTemp.path}/brisko_customer_history_test.db',
-      );
+      database = await TestDatabase.openOnDisk(dbPath);
       customers = SqliteCustomerRepository(database: database);
       orders = SqliteOrderRepository(database: database);
       payments = SqlitePaymentRepository(database: database);

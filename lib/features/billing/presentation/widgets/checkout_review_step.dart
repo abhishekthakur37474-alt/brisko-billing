@@ -41,8 +41,32 @@ class CheckoutReviewStep extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        const _CustomerPhoneField(),
+        const _CustomerInfoFields(),
         const SizedBox(height: 24),
+        if (DateTime.now().weekday == DateTime.friday &&
+            controller.qualifyingMediumPizzas > 0) ...<Widget>[
+          if (controller.qualifyingMediumPizzas == 1)
+            FilledButton.icon(
+              onPressed: null,
+              icon: const Icon(Icons.local_offer),
+              label: const Text('FRIDAY BOGO: Add 1 more Medium Pizza to get 1 FREE'),
+              style: FilledButton.styleFrom(
+                disabledBackgroundColor: theme.colorScheme.tertiaryContainer,
+                disabledForegroundColor: theme.colorScheme.onTertiaryContainer,
+              ),
+            )
+          else
+            FilledButton.icon(
+              onPressed: context.read<CheckoutController>().applyFridayOffer,
+              icon: const Icon(Icons.local_offer),
+              label: Text('FRIDAY BOGO: ${controller.fridayBogoFreeQuantity} Medium Pizza(s) FREE. Tap to apply.'),
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.colorScheme.tertiary,
+                foregroundColor: theme.colorScheme.onTertiary,
+              ),
+            ),
+          const SizedBox(height: 16),
+        ],
         const _DiscountControl(),
         const SizedBox(height: 24),
         Text('Note on the bill', style: theme.textTheme.titleSmall),
@@ -265,27 +289,32 @@ class _OrderTypeChoices extends StatelessWidget {
 /// The controller keeps the digits of whatever is typed and decides whether they amount
 /// to a usable number. It does not shorten anything to fit, so a number that cannot be
 /// stored is reported here rather than quietly turned into a different one.
-class _CustomerPhoneField extends StatefulWidget {
-  const _CustomerPhoneField();
+class _CustomerInfoFields extends StatefulWidget {
+  const _CustomerInfoFields();
 
   @override
-  State<_CustomerPhoneField> createState() => _CustomerPhoneFieldState();
+  State<_CustomerInfoFields> createState() => _CustomerInfoFieldsState();
 }
 
-class _CustomerPhoneFieldState extends State<_CustomerPhoneField> {
-  late final TextEditingController _field;
+class _CustomerInfoFieldsState extends State<_CustomerInfoFields> {
+  late final TextEditingController _phoneField;
+  late final TextEditingController _nameField;
 
   @override
   void initState() {
     super.initState();
-    _field = TextEditingController(
+    _phoneField = TextEditingController(
       text: context.read<CheckoutController>().customerPhone,
+    );
+    _nameField = TextEditingController(
+      text: context.read<CheckoutController>().customerName,
     );
   }
 
   @override
   void dispose() {
-    _field.dispose();
+    _phoneField.dispose();
+    _nameField.dispose();
     super.dispose();
   }
 
@@ -295,11 +324,19 @@ class _CustomerPhoneFieldState extends State<_CustomerPhoneField> {
 
     // The controller is the source of truth: it strips anything that is not a digit,
     // so the field is corrected back to what was actually accepted.
-    if (_field.text != controller.customerPhone) {
-      _field.value = TextEditingValue(
+    if (_phoneField.text != controller.customerPhone) {
+      _phoneField.value = TextEditingValue(
         text: controller.customerPhone,
         selection: TextSelection.collapsed(
           offset: controller.customerPhone.length,
+        ),
+      );
+    }
+    if (_nameField.text != controller.customerName) {
+      _nameField.value = TextEditingValue(
+        text: controller.customerName,
+        selection: TextSelection.collapsed(
+          offset: controller.customerName.length,
         ),
       );
     }
@@ -314,7 +351,7 @@ class _CustomerPhoneFieldState extends State<_CustomerPhoneField> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         TextField(
-          controller: _field,
+          controller: _phoneField,
           keyboardType: TextInputType.phone,
           decoration: InputDecoration(
             labelText: 'Phone number',
@@ -331,6 +368,17 @@ class _CustomerPhoneFieldState extends State<_CustomerPhoneField> {
           const SizedBox(height: 8),
           _ReturningCustomerNote(customer: controller.knownCustomer!),
         ],
+        const SizedBox(height: 16),
+        TextField(
+          controller: _nameField,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Customer Name (Optional)',
+            hintText: 'Name to print on receipt',
+            prefixIcon: Icon(Icons.person_outline),
+          ),
+          onChanged: context.read<CheckoutController>().setCustomerName,
+        ),
       ],
     );
   }

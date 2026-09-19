@@ -14,6 +14,8 @@ import 'package:brisko_billing/features/billing/data/repositories/sqlite_checkou
 import 'package:brisko_billing/features/billing/data/repositories/sqlite_held_bill_repository.dart';
 import 'package:brisko_billing/features/billing/domain/repositories/held_bill_repository.dart';
 import 'package:brisko_billing/features/customers/data/repositories/sqlite_customer_repository.dart';
+import 'package:brisko_billing/features/expenses/data/repositories/sqlite_expense_repository.dart';
+import 'package:brisko_billing/features/expenses/domain/repositories/expense_repository.dart';
 import 'package:brisko_billing/features/inventory/data/repositories/sqlite_inventory_deduction_repository.dart';
 import 'package:brisko_billing/features/inventory/data/repositories/sqlite_inventory_repository.dart';
 import 'package:brisko_billing/features/inventory/data/repositories/sqlite_recipe_repository.dart';
@@ -66,6 +68,7 @@ class TestDependencies {
     SettingsRepository? settingsRepository,
     HeldBillRepository? heldBillRepository,
     RefundRepository? refundRepository,
+    ExpenseRepository? expenseRepository,
     PosSettings activeSettings = PosSettings.unconfigured,
     PrintSettings? printSettings,
     PrinterConnectionSettings printerSettings =
@@ -104,6 +107,7 @@ class TestDependencies {
     final List<SyncEndpointBase> endpoints = buildSyncEndpoints(
       database,
       remoteFactory,
+      outbox,
     );
     final DefaultSyncCoordinator syncCoordinator = DefaultSyncCoordinator(
       endpoints: endpoints,
@@ -150,6 +154,8 @@ class TestDependencies {
         database: database,
       ),
       kotRepository: SqliteKotRepository(database: database),
+      expenseRepository:
+          expenseRepository ?? SqliteExpenseRepository(database: database),
       salesReportRepository:
           salesReportRepository ??
           SqliteSalesReportRepository(database: database),

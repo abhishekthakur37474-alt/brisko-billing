@@ -10,15 +10,17 @@ class SyncStatusSnapshot {
     required this.pendingCount,
     this.lastSyncedAt,
     this.lastError,
+    this.lastDiagnostic,
   });
 
   /// State before anything has been observed.
   const SyncStatusSnapshot.initial()
     : isOnline = false,
-      isSyncing = false,
-      pendingCount = 0,
-      lastSyncedAt = null,
-      lastError = null;
+    isSyncing = false,
+    pendingCount = 0,
+    lastSyncedAt = null,
+    lastError = null,
+    lastDiagnostic = null;
 
   final bool isOnline;
 
@@ -32,6 +34,9 @@ class SyncStatusSnapshot {
 
   /// Message from the most recent failed attempt.
   final String? lastError;
+
+  /// Detailed diagnostic JSON of the most recent failed attempt.
+  final String? lastDiagnostic;
 
   /// True when every local change has reached the cloud.
   bool get isFullySynced => pendingCount == 0 && lastError == null;

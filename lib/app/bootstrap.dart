@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../core/data/connectivity/connectivity_monitor.dart';
 import '../core/data/connectivity/network_probe.dart';
 import '../core/data/connectivity/polling_connectivity_monitor.dart';
+import '../core/data/local/sqlite/database_factory_initializer.dart';
 import '../core/data/local/sqlite/sqlite_database.dart';
 import '../core/data/local/sqlite/sqlite_outbox_store.dart';
 import '../core/data/local/sqlite/sqlite_sync_metadata_store.dart';
@@ -24,6 +25,8 @@ import '../features/billing/domain/repositories/checkout_repository.dart';
 import '../features/billing/domain/repositories/held_bill_repository.dart';
 import '../features/customers/data/repositories/sqlite_customer_repository.dart';
 import '../features/customers/domain/repositories/customer_repository.dart';
+import '../features/expenses/data/repositories/sqlite_expense_repository.dart';
+import '../features/expenses/domain/repositories/expense_repository.dart';
 import '../features/inventory/data/repositories/sqlite_inventory_deduction_repository.dart';
 import '../features/inventory/data/repositories/sqlite_inventory_repository.dart';
 import '../features/inventory/data/repositories/sqlite_recipe_repository.dart';
@@ -89,6 +92,7 @@ class AppDependencies {
     required this.recipeRepository,
     required this.inventoryDeductionRepository,
     required this.kotRepository,
+    required this.expenseRepository,
     required this.salesReportRepository,
     required this.settingsRepository,
     required this.activeSettings,
@@ -173,6 +177,8 @@ class AppDependencies {
   final InventoryDeductionRepository inventoryDeductionRepository;
 
   final KotRepository kotRepository;
+  
+  final ExpenseRepository expenseRepository;
 
   /// Aggregates over settled bills for the Reports screen.
   ///
@@ -246,8 +252,19 @@ class AppDependencies {
 /// at launch rather than halfway through a bill.
 ///
 /// Pass [databasePath] to point at a different file, which is what tests use.
-Future<AppDependencies> bootstrap({String? databasePath}) async {
+Future<AppDependencies> bootstrap({
+  String? databasePath,
+  FirebaseOptions? firebaseOptions,
+}) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Install the SQLite database factory for this platform before anything opens a
+  // database. On Windows and Linux sqflite ships no native plugin, so the global
+  // `databaseFactory` is null and the first `openDatabase` below would throw
+  // "databaseFactory not initialized"; this installs the FFI engine there. On the
+  // platforms sqflite covers natively (macOS, iOS, Android) it is a no-op and the
+  // native factory is left exactly as it was. Must run before `database.open()`.
+  initializeDatabaseFactory();
 
   // The outlet logo, decoded once from its asset and reduced to printable dots. A
   // build without the asset gets null, and receipts print with just the outlet name.
@@ -319,8 +336,9 @@ Future<AppDependencies> bootstrap({String? databasePath}) async {
   // next launch skips the login screen. It is not part of the build. A build that has a
   // project but no persisted session shows the login screen; local billing is unaffected
   // either way.
-  final FirebaseOptions firebaseOptions = FirebaseOptions.current;
-  final bool isCloudConfigured = firebaseOptions.isConfigured;
+  final FirebaseOptions effectiveFirebaseOptions =
+      firebaseOptions ?? FirebaseOptions.current;
+  final bool isCloudConfigured = effectiveFirebaseOptions.isConfigured;
 
   final AuthSessionStore sessionStore = AuthSessionStore(settings: settings);
   final PersistedSession? persistedSession = isCloudConfigured
@@ -331,7 +349,7 @@ Future<AppDependencies> bootstrap({String? databasePath}) async {
   // Project id and key from the build; the refresh token from the persisted session, if
   // any. A build with a project but no session yet is "configured" for the cloud but not
   // authenticated: the login screen is shown, and nothing is uploaded until sign-in.
-  final FirebaseConfig cloudConfig = firebaseOptions.toConfig(
+  final FirebaseConfig cloudConfig = effectiveFirebaseOptions.toConfig(
     refreshToken: persistedSession?.refreshToken,
   );
 
@@ -362,6 +380,7 @@ Future<AppDependencies> bootstrap({String? databasePath}) async {
   final List<SyncEndpointBase> endpoints = buildSyncEndpoints(
     database,
     remoteFactory,
+    outbox,
   );
 
   final DefaultSyncCoordinator syncCoordinator = DefaultSyncCoordinator(
@@ -369,6 +388,10 @@ Future<AppDependencies> bootstrap({String? databasePath}) async {
     outbox: outbox,
     metadata: syncMetadata,
     connectivity: connectivity,
+    // A completed sale writes to SQLite and announces its tables here; the
+    // coordinator turns that into a debounced cycle, so the sale reconciles and
+    // uploads promptly rather than waiting for the periodic timer.
+    tableChanges: database.tableChanges,
   );
 
   // The one-time restore/bootstrap, in the background so a slow or absent network never
@@ -429,6 +452,7 @@ Future<AppDependencies> bootstrap({String? databasePath}) async {
       database: database,
     ),
     kotRepository: kots,
+    expenseRepository: SqliteExpenseRepository(database: database),
     salesReportRepository: SqliteSalesReportRepository(database: database),
     settingsRepository: settings,
     activeSettings: activeSettings,

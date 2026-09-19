@@ -61,6 +61,7 @@ final class CustomerReceipt extends PrintDocument {
     required this.lines,
     required this.totals,
     required this.paymentMethod,
+    this.customerName,
     this.customerPhone,
     this.notes,
     this.isReprint = false,
@@ -84,6 +85,9 @@ final class CustomerReceipt extends PrintDocument {
 
   final PaymentMethod paymentMethod;
 
+  /// Customer's name, when one was taken. Absent for a walk-in.
+  final String? customerName;
+
   /// Customer's number, when one was taken. Absent for a walk-in.
   final String? customerPhone;
 
@@ -98,6 +102,9 @@ final class CustomerReceipt extends PrintDocument {
 
   @override
   String get title => 'Receipt $orderNumber';
+
+  bool get hasCustomerName =>
+      customerName != null && customerName!.trim().isNotEmpty;
 
   bool get hasCustomerPhone =>
       customerPhone != null && customerPhone!.trim().isNotEmpty;
@@ -282,6 +289,8 @@ final class KitchenKot extends PrintDocument {
     required this.orderType,
     required this.issuedAt,
     required this.lines,
+    this.customerName,
+    this.customerPhone,
     this.notes,
     this.isReprint = false,
   });
@@ -301,6 +310,12 @@ final class KitchenKot extends PrintDocument {
 
   final List<KitchenKotLine> lines;
 
+  /// Customer's name, when one was taken. Absent for a walk-in.
+  final String? customerName;
+
+  /// Customer's number, when one was taken. Absent for a walk-in.
+  final String? customerPhone;
+
   /// Order-level instruction, for example `no onion in anything`.
   final String? notes;
 
@@ -309,6 +324,12 @@ final class KitchenKot extends PrintDocument {
 
   @override
   String get title => 'KOT $kotNumber';
+
+  bool get hasCustomerName =>
+      customerName != null && customerName!.trim().isNotEmpty;
+
+  bool get hasCustomerPhone =>
+      customerPhone != null && customerPhone!.trim().isNotEmpty;
 
   bool get hasNotes => notes != null && notes!.trim().isNotEmpty;
 

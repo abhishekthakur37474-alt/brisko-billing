@@ -30,6 +30,7 @@ class SqliteTables {
   static const String heldBillLines = 'held_bill_lines';
   static const String heldBillLineOptions = 'held_bill_line_options';
   static const String settings = 'settings';
+  static const String expenses = 'expenses';
   static const String outbox = 'outbox';
 
   /// Cloud synchronisation bookmarks: the pull high-water mark, the last

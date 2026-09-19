@@ -1,5 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
+import 'package:path/path.dart' as p;
+import 'package:sqflite/sqflite.dart';
 import '../../error/app_failure.dart';
 import '../../utils/entity_id.dart';
 import '../../utils/result.dart';
@@ -63,7 +67,9 @@ class DefaultSyncCoordinator implements SyncCoordinator {
     required this._outbox,
     required this._metadata,
     required this._connectivity,
+    this._tableChanges,
     this.retryInterval = const Duration(minutes: 5),
+    this.changeDebounce = const Duration(milliseconds: 500),
     this.maxAttempts = 8,
   }) : _endpoints = <String, SyncEndpointBase>{
          for (final SyncEndpointBase endpoint in endpoints)
@@ -75,9 +81,20 @@ class DefaultSyncCoordinator implements SyncCoordinator {
   final SyncMetadataStore _metadata;
   final ConnectivityMonitor _connectivity;
 
+  /// Local-write change feed (`SqliteDatabase.tableChanges`), when wired. A write
+  /// to a synced table schedules a debounced [syncNow], so a completed sale is
+  /// reconciled and uploaded promptly instead of waiting for the periodic timer.
+  /// Left null in tests and local-only builds, where the other triggers apply.
+  final Stream<String>? _tableChanges;
+
   /// The gap between automatic cycles, which is also the backoff between retries
   /// of a queued write the server keeps refusing.
   final Duration retryInterval;
+
+  /// How long to coalesce a burst of local writes before syncing. One checkout
+  /// transaction announces several tables at once; a short debounce turns that
+  /// burst into a single cycle rather than one cycle per table.
+  final Duration changeDebounce;
 
   /// How many times a single queued write is retried against the server before it
   /// is left alone (still queued and visible) rather than retried forever.
@@ -88,7 +105,9 @@ class DefaultSyncCoordinator implements SyncCoordinator {
 
   StreamSubscription<bool>? _connectivitySub;
   StreamSubscription<int>? _pendingSub;
+  StreamSubscription<String>? _tableChangeSub;
   Timer? _timer;
+  Timer? _debounceTimer;
 
   bool _started = false;
   bool _disposed = false;
@@ -98,6 +117,7 @@ class DefaultSyncCoordinator implements SyncCoordinator {
   int _pendingCount = 0;
   DateTime? _lastSyncedAt;
   String? _lastError;
+  String? _lastDiagnostic;
 
   SyncStatusSnapshot _current = const SyncStatusSnapshot.initial();
 
@@ -136,7 +156,46 @@ class DefaultSyncCoordinator implements SyncCoordinator {
       }
     });
 
+    // A local write to a synced table schedules a debounced cycle, so a settled
+    // sale reaches the cloud without waiting for the periodic timer. Filtered to
+    // the tables that actually sync — the endpoint keys — so a write to settings,
+    // held bills or the outbox itself raises nothing.
+    final Stream<String>? tableChanges = _tableChanges;
+    if (tableChanges != null) {
+      _tableChangeSub = tableChanges
+          .where(_endpoints.containsKey)
+          .listen(_onSyncedTableChanged);
+    }
+
     unawaited(_primeStatus());
+  }
+
+  /// Coalesces a burst of local writes into a single cycle.
+  ///
+  /// Each relevant change restarts the debounce timer, so the several table
+  /// writes of one settlement result in exactly one [syncNow] once the burst
+  /// settles. Gated on being online — like the periodic timer — because an
+  /// offline write is picked up by the connectivity trigger when the link
+  /// returns; nothing is lost in the meantime, it stays queued locally.
+  ///
+  /// Changes that arrive while a cycle is running are ignored on purpose. A
+  /// cycle's own `markSynced` and pull writes announce the very tables it syncs,
+  /// so reacting to them would trigger an endless string of no-op cycles. A
+  /// genuine write made during a cycle is not lost: it stays pending locally and
+  /// is picked up by the next write's trigger or the periodic timer, exactly as
+  /// it would have been before this trigger existed.
+  void _onSyncedTableChanged(String _) {
+    if (_disposed || !_started || _isSyncing) {
+      return;
+    }
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(changeDebounce, () {
+      _debounceTimer = null;
+      if (_disposed || !_started || !_isOnline || _isSyncing) {
+        return;
+      }
+      unawaited(syncNow());
+    });
   }
 
   @override
@@ -158,8 +217,10 @@ class DefaultSyncCoordinator implements SyncCoordinator {
 
     try {
       // Rebuild the queue from local truth so nothing pending is missed, then
+      // reset attempt counts so manual or periodic syncs retry failed items, and
       // push before pulling anything down on top of it.
       await _reconcile();
+      await _outbox.resetAttemptCounts();
 
       final AppFailure? pushFailure = await _drain();
       if (pushFailure != null) {
@@ -201,10 +262,14 @@ class DefaultSyncCoordinator implements SyncCoordinator {
     _started = false;
     _timer?.cancel();
     _timer = null;
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
     await _connectivitySub?.cancel();
     _connectivitySub = null;
     await _pendingSub?.cancel();
     _pendingSub = null;
+    await _tableChangeSub?.cancel();
+    _tableChangeSub = null;
     _isSyncing = false;
     _isOnline = false;
     _emit();
@@ -214,8 +279,10 @@ class DefaultSyncCoordinator implements SyncCoordinator {
   Future<void> dispose() async {
     _disposed = true;
     _timer?.cancel();
+    _debounceTimer?.cancel();
     await _connectivitySub?.cancel();
     await _pendingSub?.cancel();
+    await _tableChangeSub?.cancel();
     await _status.close();
   }
 
@@ -269,6 +336,7 @@ class DefaultSyncCoordinator implements SyncCoordinator {
     while (!_disposed) {
       final Result<List<OutboxEntry>> batch = await _outbox.dequeueBatch(
         limit: 50,
+        maxAttempts: maxAttempts,
       );
       final List<OutboxEntry>? entries = batch.valueOrNull;
       if (entries == null) {
@@ -313,6 +381,19 @@ class DefaultSyncCoordinator implements SyncCoordinator {
           // The link is down. Stop; everything stays queued for the next cycle.
           return failure;
         }
+
+        final Map<String, dynamic> diag = <String, dynamic>{
+          'timestamp': DateTime.now().toUtc().toIso8601String(),
+          'operation': 'push',
+          'collection': entry.collection,
+          'recordId': entry.entityId,
+          'outboxId': entry.id,
+          'error': failure.message,
+          'cause': failure.cause?.toString(),
+        };
+        _lastDiagnostic = jsonEncode(diag);
+        await _writeDiagnosticLog(diag);
+
         // Server-side refusal: record it and move on. Retried on a later cycle.
         await _outbox.markFailed(entry.id, failure.message);
         _lastError = failure.message;
@@ -331,6 +412,17 @@ class DefaultSyncCoordinator implements SyncCoordinator {
       final PullOutcome? outcome = result.valueOrNull;
       if (outcome == null) {
         final AppFailure failure = result.failureOrNull!;
+        
+        final Map<String, dynamic> diag = <String, dynamic>{
+          'timestamp': DateTime.now().toUtc().toIso8601String(),
+          'operation': 'pull',
+          'collection': endpoint.collection,
+          'error': failure.message,
+          'cause': failure.cause?.toString(),
+        };
+        _lastDiagnostic = jsonEncode(diag);
+        await _writeDiagnosticLog(diag);
+
         // A network failure means offline; a remote failure means the server
         // refused. Either way, stop pulling and keep what we have.
         return failure;
@@ -366,6 +458,7 @@ class DefaultSyncCoordinator implements SyncCoordinator {
     }
     if (failure == null) {
       _lastError = null;
+      _lastDiagnostic = null;
     }
     return failure == null ? const Ok<void>(null) : Err<void>(failure);
   }
@@ -380,8 +473,20 @@ class DefaultSyncCoordinator implements SyncCoordinator {
       pendingCount: _pendingCount,
       lastSyncedAt: _lastSyncedAt,
       lastError: _lastError,
+      lastDiagnostic: _lastDiagnostic,
     );
     _status.add(_current);
+  }
+
+  Future<void> _writeDiagnosticLog(Map<String, dynamic> info) async {
+    try {
+      final String dbPath = await getDatabasesPath();
+      final File logFile = File(p.join(dbPath, 'sync_diagnostics.log'));
+      final String jsonStr = jsonEncode(info);
+      await logFile.writeAsString('$jsonStr\n', mode: FileMode.append, flush: true);
+    } catch (_) {
+      // Swallow error during diagnostic logging
+    }
   }
 
   static String _key(String collection, String entityId) =>

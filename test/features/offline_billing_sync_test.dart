@@ -37,6 +37,7 @@ void main() {
     final List<SyncEndpointBase> endpoints = buildSyncEndpoints(
       database,
       FakeRemoteStoreFactory(cloud),
+      outbox,
     );
     coordinator = DefaultSyncCoordinator(
       endpoints: endpoints,

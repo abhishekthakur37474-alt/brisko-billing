@@ -188,37 +188,11 @@ class SqliteLocalStore<T extends SyncableEntity> implements LocalStore<T> {
 
       await _db.transaction((Transaction txn) async {
         for (final T entity in incoming) {
-          // Reads the local row including a soft-deleted one, because a delete is
-          // itself a change with a timestamp: an older undelete from the cloud
-          // must not resurrect a record this terminal has since removed.
-          final List<Map<String, Object?>> rows = await txn.query(
-            table,
-            columns: <String>[SyncColumns.updatedAt],
-            where: '${SyncColumns.id} = ?',
-            whereArgs: <Object?>[entity.id],
-            limit: 1,
-          );
-
-          final int remoteAt = entity.updatedAt.toUtc().millisecondsSinceEpoch;
-
-          if (rows.isNotEmpty) {
-            final int localAt = rows.first[SyncColumns.updatedAt]! as int;
-            // Strictly newer wins. Older or equal is held back, protecting a
-            // newer local record — including a settled bill not yet uploaded.
-            if (remoteAt <= localAt) {
-              keptLocal++;
-              continue;
-            }
+          if (await _mergeOne(txn, entity)) {
+            applied++;
+          } else {
+            keptLocal++;
           }
-
-          // Stored as synced: it now matches the cloud, so it must not be queued
-          // straight back for upload.
-          final Map<String, dynamic> values = Map<String, dynamic>.from(
-            entity.toMap(),
-          )..[SyncColumns.syncState] = SyncState.synced.name;
-
-          await SqliteUpsert.run(txn, table, values);
-          applied++;
         }
       });
 
@@ -227,6 +201,262 @@ class SqliteLocalStore<T extends SyncableEntity> implements LocalStore<T> {
       }
       return RemoteMergeReport(applied: applied, keptLocal: keptLocal);
     }, context: 'apply cloud changes');
+  }
+
+  /// Merges one pulled [entity] into [table] under last-write-wins, returning true
+  /// when it was written and false when the local copy was kept.
+  ///
+  /// The conflict is resolved against whichever local row the incoming one would
+  /// collide with: first the row with the same stable [SyncableEntity.id], and — if
+  /// there is none by id — a row that shares a *natural* unique key, such as an
+  /// `orderNumber` or a once-per-order deduction. That second case is the one this
+  /// method exists for: a record re-created on another terminal carries a new id but
+  /// the same business key, so a plain `INSERT … ON CONFLICT (id)` would hit a
+  /// *secondary* unique index and throw "That record already exists.", failing the
+  /// whole pull. Resolving against the colliding row instead makes the pull
+  /// idempotent and safe.
+  ///
+  /// Last-write-wins and soft-delete are preserved exactly: strictly-newer remote
+  /// wins, older-or-equal is held back (protecting a newer local record, including a
+  /// settled bill not yet uploaded), and a soft-deleted local row still counts as a
+  /// timestamped change so an older cloud undelete cannot resurrect it.
+  Future<bool> _mergeOne(Transaction txn, T entity) async {
+    // A child record whose referenced parent does not exist locally (for example,
+    // because the parent was held back by last-write-wins or superseded by a newer
+    // record) cannot be inserted without violating SQLite foreign key constraints.
+    // Holding it back preserves relational integrity and last-write-wins consistency.
+    if (await _hasMissingParent(txn, entity)) {
+      return false;
+    }
+
+    // Reads the local row including a soft-deleted one, because a delete is itself a
+    // change with a timestamp.
+    final List<Map<String, Object?>> byId = await txn.query(
+      table,
+      columns: <String>[SyncColumns.id, SyncColumns.updatedAt],
+      where: '${SyncColumns.id} = ?',
+      whereArgs: <Object?>[entity.id],
+      limit: 1,
+    );
+
+    // No row shares the id: look for one that shares a natural unique key and would
+    // therefore block the insert. This is the previously-fatal case.
+    final Map<String, Object?>? conflict = byId.isNotEmpty
+        ? byId.first
+        : await _conflictingRow(txn, entity);
+
+    final int remoteAt = entity.updatedAt.toUtc().millisecondsSinceEpoch;
+
+    if (conflict != null) {
+      final int localAt = conflict[SyncColumns.updatedAt]! as int;
+      // Strictly newer wins. Older or equal is held back.
+      if (remoteAt <= localAt) {
+        return false;
+      }
+      final String conflictId = conflict[SyncColumns.id]! as String;
+      // A colliding row under a *different* id is an older duplicate of the same
+      // logical record (same order number, same once-per-order refund). The unique
+      // index forbids keeping both, and last-write-wins says the newer cloud copy
+      // stands, so the superseded local duplicate is removed inside this same
+      // transaction before the newer version is written in its place. A same-id
+      // collision needs no delete: the upsert updates it in place.
+      if (conflictId != entity.id) {
+        await txn.delete(
+          table,
+          where: '${SyncColumns.id} = ?',
+          whereArgs: <Object?>[conflictId],
+        );
+      }
+    }
+
+    // Stored as synced: it now matches the cloud, so it must not be queued straight
+    // back for upload.
+    final Map<String, dynamic> values = Map<String, dynamic>.from(entity.toMap())
+      ..[SyncColumns.syncState] = SyncState.synced.name;
+
+    await SqliteUpsert.run(txn, table, values);
+    return true;
+  }
+
+  /// The local row an insert of [entity] would collide with on a *secondary* unique
+  /// index (i.e. any unique index other than the primary key on `id`), or null when
+  /// none would.
+  ///
+  /// Driven by SQLite's own catalogue via `PRAGMA index_list`/`index_info`, so it
+  /// covers every unique index the schema has now — `orders.orderNumber`,
+  /// `kot_records.kotNumber`, the once-per-order `refunds`/`order_inventory_deductions`
+  /// keys, the recipe-ingredient keys — and any added later, without a hand-maintained
+  /// list to keep in step. Partial indexes are honoured naturally: a row that the
+  /// index does not cover simply matches nothing.
+  Future<Map<String, Object?>?> _conflictingRow(
+    Transaction txn,
+    T entity,
+  ) async {
+    final Map<String, dynamic> row = entity.toMap();
+
+    for (final _UniqueIndex index in await _uniqueIndexColumns(txn)) {
+      final List<String> columns = index.columns;
+      // A unique index constrains only rows where every indexed column is non-null
+      // (SQLite treats NULLs as distinct), so a row with a null in any of them can
+      // never collide on this index.
+      if (columns.any((String c) => row[c] == null)) {
+        continue;
+      }
+      final String predicate = columns
+          .map((String c) => '$c = ?')
+          .join(' AND ');
+      // A partial index (a `CREATE UNIQUE INDEX … WHERE …`, as used for the
+      // soft-delete-aware refund key and the recipe-ingredient keys) only enforces
+      // uniqueness over the rows its WHERE clause covers. Applying the same clause
+      // here means a row the index does not police — a soft-deleted refund, say —
+      // is not mistaken for a blocker.
+      final String? where = index.whereClause;
+      final List<Map<String, Object?>> matches = await txn.query(
+        table,
+        columns: <String>[SyncColumns.id, SyncColumns.updatedAt],
+        where:
+            '$predicate AND ${SyncColumns.id} != ?'
+            '${where == null ? '' : ' AND ($where)'}',
+        whereArgs: <Object?>[
+          ...columns.map((String c) => row[c]),
+          entity.id,
+        ],
+        limit: 1,
+      );
+      if (matches.isNotEmpty) {
+        return matches.first;
+      }
+    }
+    return null;
+  }
+
+  /// Every unique index on [table] SQLite would enforce, excluding the primary key
+  /// (handled by the id upsert). Cached per store, because the schema does not change
+  /// while the database is open.
+  List<_UniqueIndex>? _uniqueIndexColumnsCache;
+
+  Future<List<_UniqueIndex>> _uniqueIndexColumns(Transaction txn) async {
+    final List<_UniqueIndex>? cached = _uniqueIndexColumnsCache;
+    if (cached != null) {
+      return cached;
+    }
+
+    final List<_UniqueIndex> result = <_UniqueIndex>[];
+    final List<Map<String, Object?>> indexes = await txn.rawQuery(
+      'PRAGMA index_list($table)',
+    );
+    for (final Map<String, Object?> index in indexes) {
+      // `unique` is 1 for a unique index; `origin` is 'pk' for the primary key,
+      // 'u' for a UNIQUE constraint, 'c' for a CREATE UNIQUE INDEX. The primary key
+      // is already handled by ON CONFLICT (id), so it is skipped here.
+      final bool isUnique = (index['unique'] as int?) == 1;
+      final String origin = (index['origin'] as String?) ?? '';
+      if (!isUnique || origin == 'pk') {
+        continue;
+      }
+      final String name = index['name']! as String;
+      final List<Map<String, Object?>> info = await txn.rawQuery(
+        'PRAGMA index_info($name)',
+      );
+      final List<String> columns = <String>[
+        for (final Map<String, Object?> column in info)
+          column['name']! as String,
+      ];
+      if (columns.isEmpty) {
+        continue;
+      }
+      result.add(
+        _UniqueIndex(
+          columns: columns,
+          whereClause: await _indexWhereClause(txn, name),
+        ),
+      );
+    }
+
+    _uniqueIndexColumnsCache = result;
+    return result;
+  }
+
+  /// The `WHERE …` predicate of a partial index [name], or null for a full index.
+  ///
+  /// `PRAGMA index_info` does not expose it, so it is read from the index's own
+  /// `CREATE` statement in `sqlite_master`.
+  Future<String?> _indexWhereClause(Transaction txn, String name) async {
+    final List<Map<String, Object?>> rows = await txn.rawQuery(
+      "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+      <Object?>[name],
+    );
+    final String? sql = rows.isEmpty ? null : rows.first['sql'] as String?;
+    if (sql == null) {
+      // An auto-created index (a UNIQUE constraint) has no stored SQL; it is never
+      // partial, so it has no predicate.
+      return null;
+    }
+    final Match? match = RegExp(
+      r'\bWHERE\b(.*)$',
+      caseSensitive: false,
+      dotAll: true,
+    ).firstMatch(sql);
+    return match?.group(1)?.trim();
+  }
+
+  /// Whether [entity] references a parent row that does not exist locally across any
+  /// foreign key constraint on [table].
+  ///
+  /// Driven by SQLite's own catalogue via `PRAGMA foreign_key_list`, covering every
+  /// foreign key on the table dynamically without a hand-maintained list. Null foreign
+  /// key values are permitted by SQLite and are skipped.
+  Future<bool> _hasMissingParent(Transaction txn, T entity) async {
+    final Map<String, dynamic> row = entity.toMap();
+    for (final _ForeignKey fk in await _foreignKeys(txn)) {
+      final Object? value = row[fk.fromColumn];
+      if (value == null) {
+        continue;
+      }
+      final List<Map<String, Object?>> parent = await txn.query(
+        fk.parentTable,
+        columns: <String>[fk.toColumn],
+        where: '${fk.toColumn} = ?',
+        whereArgs: <Object?>[value],
+        limit: 1,
+      );
+      if (parent.isEmpty) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Every foreign key constraint on [table]. Cached per store.
+  List<_ForeignKey>? _foreignKeysCache;
+
+  Future<List<_ForeignKey>> _foreignKeys(Transaction txn) async {
+    final List<_ForeignKey>? cached = _foreignKeysCache;
+    if (cached != null) {
+      return cached;
+    }
+
+    final List<_ForeignKey> result = <_ForeignKey>[];
+    final List<Map<String, Object?>> rows = await txn.rawQuery(
+      'PRAGMA foreign_key_list($table)',
+    );
+    for (final Map<String, Object?> row in rows) {
+      final String? parentTable = row['table'] as String?;
+      final String? fromColumn = row['from'] as String?;
+      final String toColumn = (row['to'] as String?) ?? SyncColumns.id;
+      if (parentTable != null && fromColumn != null) {
+        result.add(
+          _ForeignKey(
+            parentTable: parentTable,
+            fromColumn: fromColumn,
+            toColumn: toColumn,
+          ),
+        );
+      }
+    }
+
+    _foreignKeysCache = result;
+    return result;
   }
 
   @override
@@ -245,7 +475,7 @@ class SqliteLocalStore<T extends SyncableEntity> implements LocalStore<T> {
     controller = StreamController<List<T>>(
       onListen: () {
         subscription = database.tableChanges
-            .where((String table) => table == table)
+            .where((String changedTable) => changedTable == table)
             .listen((String _) => unawaited(emit()));
         unawaited(emit());
       },
@@ -295,6 +525,28 @@ class SqliteLocalStore<T extends SyncableEntity> implements LocalStore<T> {
       ),
     );
   }
+}
+
+/// One secondary unique index, as the merge needs to see it: the columns it spans
+/// and, for a partial index, the `WHERE` predicate that bounds which rows it covers.
+class _UniqueIndex {
+  const _UniqueIndex({required this.columns, required this.whereClause});
+
+  final List<String> columns;
+  final String? whereClause;
+}
+
+/// One foreign key constraint on a table: the parent table and the columns it joins on.
+class _ForeignKey {
+  const _ForeignKey({
+    required this.parentTable,
+    required this.fromColumn,
+    required this.toColumn,
+  });
+
+  final String parentTable;
+  final String fromColumn;
+  final String toColumn;
 }
 
 /// Encodes and decodes the JSON payload column of the outbox table.

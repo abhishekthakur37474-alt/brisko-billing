@@ -1,5 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
+import '../../../../core/data/sync/sync_state.dart';
+import '../../../core/data/local/sqlite/row.dart';
 import '../../../core/data/local/sqlite/sqlite_tables.dart';
 import '../../../core/utils/entity_id.dart';
 import '../domain/models/customer.dart';
@@ -63,7 +65,22 @@ class SqliteCustomerWriter {
     );
 
     if (existing.isNotEmpty) {
-      return existing.first[SyncColumns.id]! as String;
+      final String existingId = existing.first[SyncColumns.id]! as String;
+      final String? cleanName = _cleaned(name);
+      if (cleanName != null) {
+        final DateTime now = DateTime.now().toUtc();
+        await db.update(
+          SqliteTables.customers,
+          <String, Object?>{
+            'name': cleanName,
+            SyncColumns.updatedAt: SqliteValue.fromDateTime(now),
+            SyncColumns.syncState: SyncState.pending.name,
+          },
+          where: '${SyncColumns.id} = ?',
+          whereArgs: <Object?>[existingId],
+        );
+      }
+      return existingId;
     }
 
     final DateTime now = DateTime.now().toUtc();

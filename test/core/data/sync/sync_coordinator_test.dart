@@ -43,6 +43,7 @@ void main() {
     final List<SyncEndpointBase> endpoints = buildSyncEndpoints(
       database,
       FakeRemoteStoreFactory(cloud),
+      outbox,
     );
     coordinator = DefaultSyncCoordinator(
       endpoints: endpoints,
@@ -189,7 +190,7 @@ void main() {
     test('connectivity returning triggers a sync', () async {
       connectivity = FakeConnectivityMonitor(online: false);
       final DefaultSyncCoordinator started = DefaultSyncCoordinator(
-        endpoints: buildSyncEndpoints(database, FakeRemoteStoreFactory(cloud)),
+        endpoints: buildSyncEndpoints(database, FakeRemoteStoreFactory(cloud), outbox),
         outbox: outbox,
         metadata: metadata,
         connectivity: connectivity,

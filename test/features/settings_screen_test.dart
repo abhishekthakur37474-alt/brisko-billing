@@ -259,7 +259,14 @@ void main() {
 
       await tap(tester, find.text(PosSection.settings.label).last);
 
-      expect(find.text('Brisko Pizza Kothrud'), findsOneWidget);
+      // The saved values are restored into the form fields. The business name is scoped
+      // to its TextField because it now also appears in the shell's app bar, which reads
+      // the same saved outlet name — the branding is intentional, so the assertion targets
+      // the field rather than counting every occurrence.
+      expect(
+        find.widgetWithText(TextField, 'Brisko Pizza Kothrud'),
+        findsOneWidget,
+      );
       expect(find.text('Wood-fired since 2019'), findsOneWidget);
       expect(find.text('Unsaved changes'), findsNothing);
     });

@@ -6,10 +6,14 @@ import '../../features/billing/presentation/screens/billing_screen.dart';
 import '../../features/cloud_sync/presentation/widgets/sync_status_indicator.dart';
 import '../../features/customers/presentation/screens/customers_screen.dart';
 import '../../features/dashboard/presentation/screens/dashboard_screen.dart';
+import '../../features/expenses/presentation/screens/expenses_screen.dart';
 import '../../features/inventory/presentation/screens/inventory_screen.dart';
 import '../../features/kot/presentation/screens/kitchen_screen.dart';
 import '../../features/menu/presentation/screens/menu_screen.dart';
+import '../../features/printing/domain/models/business_identity.dart';
 import '../../features/reports/presentation/screens/reports_screen.dart';
+import '../../features/settings/domain/active_pos_settings.dart';
+import '../../features/settings/domain/models/pos_settings.dart';
 import '../../features/settings/presentation/screens/settings_screen.dart';
 import 'pos_section.dart';
 import 'shell_controller.dart';
@@ -31,9 +35,18 @@ class PosShell extends StatelessWidget {
     final bool isWide =
         MediaQuery.sizeOf(context).width >= AppConstants.wideLayoutBreakpoint;
 
+    // The outlet's own trading name, taken from the configuration the bootstrap loaded
+    // and the Settings screen updates — never hard-coded. It falls back to the same
+    // BusinessIdentity.defaultName the receipt header uses, so the screen and the paper
+    // lead with the same name. read (not watch): ActivePosSettings is replaced wholesale
+    // on save, and the shell rebuilds on the next navigation, which is when a renamed
+    // outlet should appear in the frame.
+    final PosSettings settings = context.read<ActivePosSettings>().settings;
+    final String outletName = settings.businessName ?? BusinessIdentity.defaultName;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(section.label),
+        title: _ShellTitle(outletName: outletName, sectionLabel: section.label),
         // Unobtrusive, and never a control: the sync status reports here, while
         // the manual sync and detail live in Settings.
         actions: const <Widget>[
@@ -69,8 +82,47 @@ class PosShell extends StatelessWidget {
       PosSection.inventory => const InventoryScreen(),
       PosSection.customers => const CustomersScreen(),
       PosSection.reports => const ReportsScreen(),
+      PosSection.expenses => const ExpensesScreen(),
       PosSection.settings => const SettingsScreen(),
     };
+  }
+}
+
+/// The app bar heading: the outlet's name, with the active section beneath it.
+///
+/// The name is the branding the requirement asks for, shown prominently in the frame that
+/// stays on screen through every section. It is the configured business name, so a
+/// differently named outlet sees its own name here; the section label keeps the operator
+/// oriented without a separate title bar.
+class _ShellTitle extends StatelessWidget {
+  const _ShellTitle({required this.outletName, required this.sectionLabel});
+
+  final String outletName;
+  final String sectionLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          outletName,
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+        Text(
+          sectionLabel,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
   }
 }
 

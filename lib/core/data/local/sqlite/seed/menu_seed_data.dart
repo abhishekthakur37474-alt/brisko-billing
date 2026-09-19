@@ -167,15 +167,27 @@ class MenuSeedData {
             displayOrder: spec.displayOrder,
           ),
 
-    // Ketchup is the only option printed at a single flat price, and the only one
-    // that is not size-dependent, so it stays global.
-    const SeedOption(
-      slug: 'ketchup',
-      name: 'Ketchup',
-      optionTypeName: _condiment,
-      priceRupees: '10',
-      displayOrder: 50,
-    ),
+    // Ketchup is printed at a single flat price. It is scoped to food categories
+    // so it does not appear on shakes or cold drinks.
+    for (final String categorySlug in const <String>[
+      'veg-pizza',
+      'burger',
+      'wraps',
+      'taco',
+      'sandwich',
+      'family-combos',
+      'twin-treat-pizza-combo',
+      'burger-combo',
+      'side-orders',
+    ])
+      SeedOption(
+        slug: 'ketchup-$categorySlug',
+        categorySlug: categorySlug,
+        name: 'Ketchup',
+        optionTypeName: _condiment,
+        priceRupees: '10',
+        displayOrder: 50,
+      ),
   ];
 
   /// Pizza options and the printed price for each size they are offered at.
@@ -702,6 +714,24 @@ class MenuSeedData {
           '2 Medium Pizza + 1 Garlic Bread With Dip + 1 Brisko Parcel '
           '+ 1 French Fries + 1 Chocolava Cake + Pasta + Cold Drinks (1Ltr)',
       displayOrder: 40,
+    ),
+    SeedMenuItem(
+      slug: 'set-of-4-single-topping',
+      categorySlug: 'family-combos',
+      name: 'Set of 4 Single Topping Pizzas',
+      itemTypeName: _veg,
+      basePriceRupees: '290',
+      description: 'Exactly 4 pizzas: Onion, Tomato, Capsicum, Corn',
+      displayOrder: 50,
+    ),
+    SeedMenuItem(
+      slug: 'set-of-4-double-topping',
+      categorySlug: 'family-combos',
+      name: 'Set of 4 Double Topping Pizzas',
+      itemTypeName: _veg,
+      basePriceRupees: '390',
+      description: 'Set of 4 Double Topping Pizzas',
+      displayOrder: 60,
     ),
 
     // -------------------------------------------- TWIN TREAT PIZZA COMBO ---

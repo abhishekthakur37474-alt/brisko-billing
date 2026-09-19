@@ -88,7 +88,11 @@ abstract interface class OrderRepository {
   /// Fails with a `ValidationFailure` when the bill is not on this terminal or has
   /// already been cancelled. The check and the write share one transaction, so two
   /// simultaneous cancellations resolve to one winner rather than both succeeding.
-  Future<Result<Order>> cancelOrder(String orderId);
+  Future<Result<Order>> cancelOrder(
+    String orderId, {
+    String? cancellationReason,
+    String? authorizedBy,
+  });
 
   /// Soft-deletes the order. Lines are left in place and are unreachable through
   /// [loadItems] only if they are themselves deleted, so history stays auditable.

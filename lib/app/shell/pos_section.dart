@@ -45,6 +45,11 @@ enum PosSection {
     label: 'Settings',
     icon: Icons.settings_outlined,
     selectedIcon: Icons.settings,
+  ),
+  expenses(
+    label: 'Expenses',
+    icon: Icons.attach_money_outlined,
+    selectedIcon: Icons.attach_money,
   );
 
   const PosSection({

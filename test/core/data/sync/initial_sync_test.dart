@@ -1,6 +1,7 @@
 import 'package:brisko_billing/app/sync/sync_endpoints.dart';
 import 'package:brisko_billing/core/data/local/sqlite/sqlite_database.dart';
 import 'package:brisko_billing/core/data/local/sqlite/sqlite_local_store.dart';
+import 'package:brisko_billing/core/data/local/sqlite/sqlite_outbox_store.dart';
 import 'package:brisko_billing/core/data/local/sqlite/sqlite_sync_metadata_store.dart';
 import 'package:brisko_billing/core/data/local/sqlite/sqlite_tables.dart';
 import 'package:brisko_billing/core/data/sync/initial_sync_service.dart';
@@ -27,11 +28,13 @@ void main() {
     database = await TestDatabase.openInMemory();
     cloud = FakeCloud();
     metadata = SqliteSyncMetadataStore(database: database);
-    endpoints = buildSyncEndpoints(database, FakeRemoteStoreFactory(cloud));
+    final SqliteOutboxStore outbox = SqliteOutboxStore(database: database);
+    endpoints = buildSyncEndpoints(database, FakeRemoteStoreFactory(cloud), outbox);
     customers = SqliteLocalStore<Customer>(
       database: database,
       table: SqliteTables.customers,
       fromRow: Customer.fromRow,
+      outbox: outbox,
     );
   });
 

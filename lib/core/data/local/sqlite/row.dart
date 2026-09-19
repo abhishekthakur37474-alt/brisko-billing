@@ -24,6 +24,12 @@ extension SqliteRow on Map<String, Object?> {
   DateTime requireDateTime(String column) =>
       DateTime.fromMillisecondsSinceEpoch(requireInt(column), isUtc: true);
 
+  DateTime? optionalDateTime(String column) {
+    final int? value = this[column] as int?;
+    if (value == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true);
+  }
+
   /// Reads an enum stored by name.
   ///
   /// Falls back to [fallback] for an unrecognised value, which can only happen if

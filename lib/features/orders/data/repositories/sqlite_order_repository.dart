@@ -303,7 +303,11 @@ class SqliteOrderRepository implements OrderRepository {
   /// transactions are serialised, so of two simultaneous cancellations the second sees
   /// the first's committed status and is turned away.
   @override
-  Future<Result<Order>> cancelOrder(String orderId) {
+  Future<Result<Order>> cancelOrder(
+    String orderId, {
+    String? cancellationReason,
+    String? authorizedBy,
+  }) {
     return SqliteErrorMapper.guard<Order>(() async {
       await _db.transaction((Transaction txn) async {
         await _refuseIfNotCancellable(txn, orderId);
@@ -314,6 +318,9 @@ class SqliteOrderRepository implements OrderRepository {
           SqliteTables.orders,
           <String, Object?>{
             'status': OrderCancellation.cancelledStatus.name,
+            'cancelledAt': now,
+            'cancellationReason': cancellationReason,
+            'authorizedBy': authorizedBy,
             SyncColumns.updatedAt: now,
             // The status change is itself a change no backend has seen.
             SyncColumns.syncState: SyncState.pending.name,

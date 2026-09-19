@@ -1,6 +1,7 @@
 import 'package:brisko_billing/app/bootstrap.dart';
 import 'package:brisko_billing/app/brisko_app.dart';
 import 'package:brisko_billing/app/shell/pos_section.dart';
+import 'package:brisko_billing/features/settings/domain/models/pos_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -64,6 +65,44 @@ void main() {
       // The dashboard is the landing section and reads the database when shown, as does
       // the reports screen. Let that I/O settle so no sqflite timer outlives the widget
       // tree when the test tears down.
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+    });
+
+    testWidgets('shows the configured outlet name in the app bar', (
+      WidgetTester tester,
+    ) async {
+      // A terminal whose owner has set the business name. The shell must lead with it,
+      // taken from the configuration rather than hard-coded.
+      final AppDependencies configured = TestDependencies.over(
+        await TestDatabase.openInMemory(),
+        activeSettings: const PosSettings(businessName: 'Brisko Pizza'),
+      );
+      addTearDown(configured.dispose);
+
+      await tester.pumpWidget(BriskoApp(dependencies: configured));
+
+      // The outlet name is shown prominently, alongside the section heading beneath it.
+      expect(find.text('Brisko Pizza'), findsWidgets);
+      expect(find.text(PosSection.dashboard.label), findsWidgets);
+
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+    });
+
+    testWidgets('falls back to the default outlet name when none is set', (
+      WidgetTester tester,
+    ) async {
+      // A fresh install configures no name. The shell falls back to the same default the
+      // receipt header uses, so the frame is never left without a heading.
+      await tester.pumpWidget(BriskoApp(dependencies: dependencies));
+
+      expect(find.text('Brisko Pizza'), findsWidgets);
+
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 50)),
       );

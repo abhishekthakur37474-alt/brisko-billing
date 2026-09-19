@@ -1,5 +1,10 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
+import 'package:sqflite/sqflite.dart';
 
 import '../controllers/sync_status_controller.dart';
 
@@ -61,6 +66,11 @@ class CloudSyncSettingsSection extends StatelessWidget {
               label: 'Pending changes',
               value: '${controller.pendingCount}',
             ),
+
+            if (controller.state == SyncIndicatorState.failed && controller.lastDiagnostic != null) ...[
+              const SizedBox(height: 16),
+              _DiagnosticPanel(diagnosticJson: controller.lastDiagnostic!),
+            ],
 
             const SizedBox(height: 16),
             Row(
@@ -143,5 +153,83 @@ class _StatusRow extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _DiagnosticPanel extends StatelessWidget {
+  const _DiagnosticPanel({required this.diagnosticJson});
+  final String diagnosticJson;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    Map<String, dynamic> diag = <String, dynamic>{};
+    try {
+      diag = jsonDecode(diagnosticJson) as Map<String, dynamic>;
+    } catch (_) {}
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.error_outline, color: theme.colorScheme.error, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Sync Failed Diagnostics',
+                style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onErrorContainer),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text('Reason: ${diag['error'] ?? 'Unknown'}', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onErrorContainer)),
+          Text('Operation: ${diag['operation'] ?? 'Unknown'}', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onErrorContainer)),
+          if (diag['collection'] != null) Text('Collection: ${diag['collection']}', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onErrorContainer)),
+          if (diag['recordId'] != null) Text('Record ID: ${diag['recordId']}', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onErrorContainer)),
+          const SizedBox(height: 12),
+          FilledButton.tonalIcon(
+            onPressed: () => _exportDiagnostics(context),
+            icon: const Icon(Icons.download),
+            label: const Text('Export sync diagnostics'),
+            style: FilledButton.styleFrom(
+              backgroundColor: theme.colorScheme.onErrorContainer.withValues(alpha: 0.1),
+              foregroundColor: theme.colorScheme.onErrorContainer,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportDiagnostics(BuildContext context) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    try {
+      final String dbPath = await getDatabasesPath();
+      final File logFile = File(p.join(dbPath, 'sync_diagnostics.log'));
+      
+      if (!logFile.existsSync()) {
+        messenger.showSnackBar(const SnackBar(content: Text('No diagnostic log found.')));
+        return;
+      }
+      
+      final String userProfile = Platform.environment['USERPROFILE'] ?? '';
+      if (userProfile.isEmpty) {
+        messenger.showSnackBar(const SnackBar(content: Text('Could not locate user profile directory.')));
+        return;
+      }
+      
+      final File destFile = File(p.join(userProfile, 'Desktop', 'brisko_sync_diagnostics.txt'));
+      await logFile.copy(destFile.path);
+      
+      messenger.showSnackBar(SnackBar(content: Text('Exported to: ${destFile.path}')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Failed to export: $e')));
+    }
   }
 }

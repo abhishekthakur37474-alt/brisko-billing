@@ -47,6 +47,9 @@ class Order implements SyncableEntity {
     this.discountValue = 0,
     this.customerId,
     this.notes,
+    this.cancelledAt,
+    this.cancellationReason,
+    this.authorizedBy,
     this.isDeleted = false,
     this.syncState = SyncState.pending,
   });
@@ -77,6 +80,9 @@ class Order implements SyncableEntity {
       discountType: row.optionalString('discountType'),
       discountValue: row.optionalInt('discountValue'),
       notes: row.optionalString('notes'),
+      cancelledAt: row.optionalDateTime('cancelledAt'),
+      cancellationReason: row.optionalString('cancellationReason'),
+      authorizedBy: row.optionalString('authorizedBy'),
       createdAt: row.requireDateTime(SyncColumns.createdAt),
       updatedAt: row.requireDateTime(SyncColumns.updatedAt),
       isDeleted: row.requireBool(SyncColumns.isDeleted),
@@ -124,6 +130,15 @@ class Order implements SyncableEntity {
 
   final String? notes;
 
+  /// When this bill was cancelled, if its status is [OrderStatus.cancelled].
+  final DateTime? cancelledAt;
+
+  /// The reason provided for cancellation, if any.
+  final String? cancellationReason;
+
+  /// The identifier of the manager who authorized the cancellation.
+  final String? authorizedBy;
+
   final DateTime createdAt;
 
   @override
@@ -160,6 +175,9 @@ class Order implements SyncableEntity {
     String? discountType,
     int? discountValue,
     String? notes,
+    DateTime? cancelledAt,
+    String? cancellationReason,
+    String? authorizedBy,
     DateTime? updatedAt,
     bool? isDeleted,
     SyncState? syncState,
@@ -178,6 +196,9 @@ class Order implements SyncableEntity {
       discountType: discountType ?? this.discountType,
       discountValue: discountValue ?? this.discountValue,
       notes: notes ?? this.notes,
+      cancelledAt: cancelledAt ?? this.cancelledAt,
+      cancellationReason: cancellationReason ?? this.cancellationReason,
+      authorizedBy: authorizedBy ?? this.authorizedBy,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isDeleted: isDeleted ?? this.isDeleted,
@@ -205,6 +226,9 @@ class Order implements SyncableEntity {
       'discountType': discountType,
       'discountValue': discountValue,
       'notes': notes,
+      'cancelledAt': cancelledAt == null ? null : SqliteValue.fromDateTime(cancelledAt!),
+      'cancellationReason': cancellationReason,
+      'authorizedBy': authorizedBy,
     };
   }
 }

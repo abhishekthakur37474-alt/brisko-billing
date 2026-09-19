@@ -54,6 +54,7 @@ class BillSettlement {
     required this.createdAt,
     required List<OrderItem> items,
     required List<OrderItemOption> itemOptions,
+    this.customerName,
     this.customerPhone,
     this.notes,
     String? kotId,
@@ -81,6 +82,7 @@ class BillSettlement {
     required PaymentMethod paymentMethod,
     BillDiscount discount = BillDiscount.none,
     GstRate taxRate = GstRate.zero,
+    String? customerName,
     String? customerPhone,
     String? reference,
     String? notes,
@@ -155,6 +157,7 @@ class BillSettlement {
         createdAt: createdAt,
         updatedAt: createdAt,
       ),
+      customerName: customerName,
       customerPhone: customerPhone,
       notes: notes,
       createdAt: createdAt,
@@ -176,6 +179,9 @@ class BillSettlement {
 
   /// The tender. One row: split payment is a later feature, not a hidden one.
   final Payment payment;
+
+  /// The customer's name, or `null` if none was given.
+  final String? customerName;
 
   /// The number the cashier took, or `null` for a walk-in who gave none.
   ///

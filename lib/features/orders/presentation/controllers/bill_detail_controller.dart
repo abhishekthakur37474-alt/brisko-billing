@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../../../../core/error/app_failure.dart';
 import '../../../../core/money/money.dart';
 import '../../../../core/utils/result.dart';
+import '../../../auth/domain/services/manager_auth_service.dart';
 import '../../../customers/domain/models/customer.dart';
 import '../../../customers/domain/repositories/customer_repository.dart';
 import '../../../payments/domain/models/payment.dart';
@@ -18,7 +19,6 @@ import '../../../printing/domain/services/print_service.dart';
 import '../../domain/models/bill_line_snapshot.dart';
 import '../../domain/models/order.dart';
 import '../../domain/models/order_cancellation.dart';
-import '../../domain/models/order_status.dart';
 import '../../domain/repositories/order_repository.dart';
 
 /// Holds one stored bill, exactly as it was written.
@@ -64,6 +64,7 @@ class BillDetailController extends ChangeNotifier {
     required PaymentRepository paymentRepository,
     required CustomerRepository customerRepository,
     required RefundRepository refundRepository,
+    required this._managerAuthService,
     required this._printService,
   }) : _orders = orderRepository,
        _payments = paymentRepository,
@@ -75,6 +76,7 @@ class BillDetailController extends ChangeNotifier {
   final PaymentRepository _payments;
   final CustomerRepository _customers;
   final RefundRepository _refunds;
+  final ManagerAuthService _managerAuthService;
 
   /// Sends the bill or the kitchen slip to paper again.
   ///
@@ -234,18 +236,17 @@ class BillDetailController extends ChangeNotifier {
   /// separate button — so offering cancel on it would invite undoing a paid bill without
   /// giving the money back. The domain rule `OrderCancellation.canCancel` still guards the
   /// write; this getter is the narrower question of whether to show the action at all.
+  /// A completed sale can now be cancelled with a manager password, per business requirement.
   bool get canCancel =>
       _order != null &&
       !_isCancelling &&
       !_didCancel &&
-      _order!.status != OrderStatus.completed &&
       OrderCancellation.canCancel(_order!.status);
 
   /// Why cancelling is not offered, or `null` when it is.
   ///
   /// Only spelled out for a bill that has already been cancelled, which is the one case a
-  /// reader might expect the action and needs told about. A completed bill silently offers
-  /// a refund instead.
+  /// reader might expect the action and needs told about.
   String? get cancelRefusal {
     final Order? order = _order;
     if (order == null || _didCancel) {
@@ -516,7 +517,7 @@ class BillDetailController extends ChangeNotifier {
   /// status, the lines and the now-closed refund state all come from the committed rows.
   ///
   /// Ignores a call made while one is already running, so a double tap cannot fire two.
-  Future<bool> cancel() async {
+  Future<bool> cancel({required String password, String? reason}) async {
     final Order? order = _order;
     if (_isCancelling || order == null) {
       return false;
@@ -526,7 +527,25 @@ class BillDetailController extends ChangeNotifier {
     _cancelError = null;
     _notify();
 
-    final Result<Order> outcome = await _orders.cancelOrder(order.id);
+    final Result<bool> authResult = await _managerAuthService.verifyPassword(password);
+    if (authResult.isErr) {
+      _isCancelling = false;
+      _cancelError = 'Could not verify manager password.';
+      _notify();
+      return false;
+    }
+    if (!authResult.valueOrNull!) {
+      _isCancelling = false;
+      _cancelError = 'Incorrect manager password.';
+      _notify();
+      return false;
+    }
+
+    final Result<Order> outcome = await _orders.cancelOrder(
+      order.id,
+      cancellationReason: reason,
+      authorizedBy: 'Manager', // Can be enhanced later with specific user IDs
+    );
     final AppFailure? failure = outcome.failureOrNull;
     if (failure != null) {
       _isCancelling = false;

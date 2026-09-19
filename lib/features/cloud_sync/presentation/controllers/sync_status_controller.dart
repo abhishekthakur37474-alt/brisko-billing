@@ -68,6 +68,8 @@ class SyncStatusController extends ChangeNotifier {
 
   String? get lastError => _snapshot.lastError;
 
+  String? get lastDiagnostic => _snapshot.lastDiagnostic;
+
   /// The single state the indicator renders.
   SyncIndicatorState get state {
     if (!isCloudConfigured) {

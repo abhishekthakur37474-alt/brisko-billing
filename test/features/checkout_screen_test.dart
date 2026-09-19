@@ -59,7 +59,7 @@ void main() {
   /// turn. Without this the screen would sit on a loading state forever.
   Future<void> settle(WidgetTester tester) async {
     await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 40)),
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
     );
     await tester.pumpAndSettle();
   }

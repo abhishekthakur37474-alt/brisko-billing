@@ -122,11 +122,32 @@ class CupsRawPrintTransport implements RawPrintTransport {
 
   // --------------------------------------------------------------- internals ---
 
-  /// Watches the queue until the job leaves it, failing if the queue goes disabled.
+  /// Watches the queue until the job leaves it *and* the printer has drained it, failing
+  /// if the queue goes disabled.
   ///
   /// This is what turns "lp accepted the job" into "an enabled printer processed it".
   /// A cable pulled after submission disables the queue in CUPS, and that is caught here
   /// rather than reported as a successful print.
+  ///
+  /// ## Why it waits for the printer to be idle, not just for the job to leave the queue
+  ///
+  /// CUPS considers a raw job finished the instant it has handed the last byte to the
+  /// device — `lpstat -o` stops listing it while `lpstat -p` still reports "now printing …
+  /// Sending data to printer." At that moment the bytes are in the printer's own input
+  /// buffer, not yet on paper. If the next document is submitted then, its data lands in a
+  /// buffer that is still draining the previous one. On a small text document that is
+  /// harmless; on the customer receipt, whose banded logo raster is several kilobytes, it
+  /// overruns the compact printer's few-kilobyte buffer, the device drops out of raster
+  /// mode, and the rest of the image prints as a block of garbage above the outlet name —
+  /// exactly the "first receipt after a KOT is corrupt, the reprint is clean" symptom,
+  /// because a reprint is sent on its own into an already-idle printer.
+  ///
+  /// So completion here means both facts together: the job has left the queue and the
+  /// printer has returned to idle. Because [EscPosThermalPrinter.send] serialises whole
+  /// documents through its own queue, this makes the barrier a physical one — the receipt
+  /// is not submitted until the printer has finished consuming the KOT. It is driven by
+  /// the printer's reported state, not by a fixed delay: a fast document clears in one
+  /// poll, and nothing waits longer than the device actually takes.
   Future<void> _awaitCompletion(String queue, String requestId) async {
     final DateTime deadline = DateTime.now().add(completionTimeout);
     while (DateTime.now().isBefore(deadline)) {
@@ -138,15 +159,16 @@ class CupsRawPrintTransport implements RawPrintTransport {
         );
       }
       final bool stillQueued = await _isJobPending(queue, requestId);
-      if (!stillQueued) {
-        // Left an enabled queue: the printer took it.
+      if (!stillQueued && !state.processing) {
+        // The job has left an enabled queue and the printer is idle again: it has taken
+        // the whole document and drained its buffer, so the next one can safely follow.
         return;
       }
       await _sleep(pollInterval);
     }
-    // Timed out with the job still on an enabled queue. Not a failure: the printer is
-    // accepting work and the bytes are the spooler's responsibility now, exactly as a
-    // successful WritePrinter is on Windows.
+    // Timed out with the job still on an enabled queue, or the printer still draining it.
+    // Not a failure: the printer is accepting work and the bytes are the spooler's
+    // responsibility now, exactly as a successful WritePrinter is on Windows.
   }
 
   Future<String> _resolveQueue() async {
@@ -167,17 +189,26 @@ class CupsRawPrintTransport implements RawPrintTransport {
   }
 
   Future<_QueueState> _queueState(String queue) async {
-    // `lpstat -p <queue>` prints "printer X is idle." / "... disabled since ...".
+    // `lpstat -p <queue>` prints one of:
+    //   "printer X is idle."
+    //   "printer X now printing X-42.  ... Sending data to printer."   (actively draining)
+    //   "printer X disabled since ..."
     // A non-zero exit or empty output means the queue does not exist.
     final CommandResult result = await _run('lpstat', <String>['-p', queue]);
     if (result.exitCode != 0 || result.stdout.trim().isEmpty) {
-      return const _QueueState(exists: false, disabled: false);
+      return const _QueueState(exists: false, disabled: false, processing: false);
     }
     final String out = result.stdout.toLowerCase();
     final bool disabled = out.contains('disabled');
+    // The printer is still receiving the current document when CUPS reports it "now
+    // printing" or "sending data". Used to hold the next document back until the device
+    // has drained this one — see [_awaitCompletion].
+    final bool processing =
+        out.contains('now printing') || out.contains('sending data');
     return _QueueState(
       exists: true,
       disabled: disabled,
+      processing: processing,
       reason: disabled ? _firstLine(result.stdout) : null,
     );
   }
@@ -243,17 +274,25 @@ class CupsRawPrintTransport implements RawPrintTransport {
   }
 }
 
-/// The state of a CUPS queue, reduced to the two facts that decide whether printing can
-/// happen: does it exist, and is it enabled.
+/// The state of a CUPS queue, reduced to the facts that decide whether printing can
+/// happen and whether a document is still being drained: does it exist, is it enabled,
+/// and is the printer actively receiving the current job.
 class _QueueState {
   const _QueueState({
     required this.exists,
     required this.disabled,
+    this.processing = false,
     this.reason,
   });
 
   final bool exists;
   final bool disabled;
+
+  /// True while CUPS is still handing the current document to the device ("now printing"
+  /// / "Sending data to printer"). The next document must wait for this to clear so its
+  /// bytes do not land in a buffer the previous one is still draining.
+  final bool processing;
+
   final String? reason;
 }
 

@@ -201,25 +201,26 @@ class RepositorySalePrintDocumentSource implements SalePrintDocumentSource {
         // The first settled tender. Split payment is a later feature, and when it
         // arrives this is the line that changes.
         paymentMethod: settled.first.paymentMethod,
-        customerPhone: await _customerPhone(order.customerId),
+        customerName: (await _customer(order.customerId))?.name,
+        customerPhone: (await _customer(order.customerId))?.phone,
         notes: order.notes,
         isReprint: isReprint,
       ),
     );
   }
 
-  /// The customer's number, or `null` for a walk-in or an unreadable record.
+  /// The customer's record, or `null` for a walk-in or an unreadable record.
   ///
   /// A failure here is deliberately swallowed. A receipt without the customer's phone
   /// number is a perfectly good receipt; refusing to print one because the customer
   /// table could not be read would be a poor trade at a counter.
-  Future<String?> _customerPhone(String? customerId) async {
+  Future<Customer?> _customer(String? customerId) async {
     if (customerId == null) {
       return null;
     }
     final Result<Customer?> found = await customers.findById(customerId);
-    return found.fold<String?>(
-      onOk: (Customer? customer) => customer?.phone,
+    return found.fold<Customer?>(
+      onOk: (Customer? customer) => customer,
       onErr: (AppFailure _) => null,
     );
   }
@@ -237,6 +238,8 @@ class RepositorySalePrintDocumentSource implements SalePrintDocumentSource {
       return Err<List<KitchenKot>>(tickets.failureOrNull!);
     }
 
+    final Customer? customer = await _customer(order.customerId);
+
     return Ok<List<KitchenKot>>(
       tickets.valueOrNull!
           .map(
@@ -245,6 +248,8 @@ class RepositorySalePrintDocumentSource implements SalePrintDocumentSource {
               orderNumber: ticket.orderNumber,
               orderType: ticket.orderType,
               issuedAt: ticket.createdAt,
+              customerName: customer?.name,
+              customerPhone: customer?.phone,
               notes: ticket.notes,
               isReprint: isReprint,
               lines: ticket.lines

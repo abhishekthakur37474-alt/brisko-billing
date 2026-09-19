@@ -45,6 +45,20 @@ class Cart {
   /// Sum of every line total, before discounts and tax. Exact integer paise.
   Money get subtotal => Money.sum(lines.map((CartLine line) => line.lineTotal));
 
+  /// List of individual unit prices for all qualifying medium pizzas.
+  /// Explodes lines by quantity so 2 Medium pizzas on one line result in two prices.
+  List<Money> get fridayMediumPizzaUnitPrices {
+    final List<Money> prices = <Money>[];
+    for (final CartLine line in lines) {
+      if (line.variantNameSnapshot == 'Medium') {
+        for (int i = 0; i < line.quantity; i++) {
+          prices.add(line.unitPrice);
+        }
+      }
+    }
+    return prices;
+  }
+
   CartLine? lineById(String lineId) {
     for (final CartLine line in lines) {
       if (line.id == lineId) {

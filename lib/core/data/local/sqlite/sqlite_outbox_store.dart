@@ -48,12 +48,15 @@ class SqliteOutboxStore implements OutboxStore {
   }
 
   @override
-  Future<Result<List<OutboxEntry>>> dequeueBatch({int limit = 50}) {
+  Future<Result<List<OutboxEntry>>> dequeueBatch({int limit = 50, int maxAttempts = 8}) {
     return SqliteErrorMapper.guard<List<OutboxEntry>>(() async {
       // Oldest first: replaying out of order could apply a stale update on top
-      // of a newer one.
+      // of a newer one. Exclude entries that have exceeded maxAttempts to prevent
+      // a permanently failing entry from blocking the queue.
       final List<Map<String, Object?>> rows = await _db.query(
         SqliteTables.outbox,
+        where: 'attemptCount < ?',
+        whereArgs: <Object?>[maxAttempts],
         orderBy: 'queuedAt ASC',
         limit: limit,
       );
@@ -84,6 +87,15 @@ class SqliteOutboxStore implements OutboxStore {
       );
       await _publishPendingCount();
     }, context: 'record the failed upload');
+  }
+
+  @override
+  Future<Result<void>> resetAttemptCounts() {
+    return SqliteErrorMapper.guard<void>(() async {
+      await _db.rawUpdate(
+        'UPDATE ${SqliteTables.outbox} SET attemptCount = 0',
+      );
+    }, context: 'reset attempt counts');
   }
 
   @override

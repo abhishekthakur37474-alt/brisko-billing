@@ -75,7 +75,11 @@ class SqliteCheckoutRepository implements CheckoutRepository {
         // customers.
         final String? customerId = customerPhone == null
             ? null
-            : await SqliteCustomerWriter.resolve(txn, customerPhone);
+            : await SqliteCustomerWriter.resolve(
+                txn,
+                customerPhone,
+                name: settlement.customerName,
+              );
 
         final Order order = settlement.toOrder(
           orderNumber,

@@ -128,7 +128,7 @@ void main() {
           Directory('lib/features/reports')
               .listSync(recursive: true)
               .whereType<File>()
-              .map((File file) => file.path)
+              .map((File file) => file.path.replaceAll(r'\', '/'))
               .where((String path) => path.endsWith('.dart'))
               .toList()
             ..sort();

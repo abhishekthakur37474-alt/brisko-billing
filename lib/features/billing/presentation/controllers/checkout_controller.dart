@@ -155,6 +155,7 @@ class CheckoutController extends ChangeNotifier {
   /// available on the review step, because the type is a fact about the order rather
   /// than a preference.
   OrderType _orderType;
+  String _customerName = '';
   String _customerPhone = '';
   String _notes = '';
   PaymentMethod? _paymentMethod;
@@ -357,6 +358,8 @@ class CheckoutController extends ChangeNotifier {
   bool get requiresCustomerPhone => _orderType.isOffPremises;
 
   bool get hasCustomerPhone => _customerPhone.isNotEmpty;
+  
+  String get customerName => _customerName;
 
   /// True when what has been entered reduces to a number that can be stored.
   bool get isCustomerPhoneComplete => normalisedCustomerPhone != null;
@@ -502,6 +505,50 @@ class CheckoutController extends ChangeNotifier {
     _applyDiscount(BillDiscount.none);
   }
 
+  /// Number of qualifying medium pizzas for the Friday BOGO offer.
+  int get qualifyingMediumPizzas => _cart.fridayMediumPizzaUnitPrices.length;
+
+  /// Number of free medium pizzas available under the Friday BOGO offer.
+  int get fridayBogoFreeQuantity => qualifyingMediumPizzas ~/ 2;
+
+  /// Calculates and applies the Friday BOGO offer (Buy 1 Get 1 Free on medium pizzas).
+  void applyFridayOffer() {
+    if (isSettled) {
+      return;
+    }
+    if (DateTime.now().weekday != DateTime.friday) {
+      return;
+    }
+    
+    final int freeCount = fridayBogoFreeQuantity;
+    if (freeCount < 1) {
+      return;
+    }
+
+    final List<Money> unitPrices = _cart.fridayMediumPizzaUnitPrices;
+    // Sort from lowest to highest.
+    unitPrices.sort((Money a, Money b) => a.compareTo(b));
+    
+    // Sum the cheapest `freeCount` pizzas to determine the discount amount.
+    Money discountAmount = Money.zero;
+    for (int i = 0; i < freeCount; i++) {
+      discountAmount += unitPrices[i];
+    }
+    
+    _discountType = BillDiscountType.amount;
+    _discountEntry = discountAmount.toDecimalString();
+    
+    // Set the control open so the user sees the discount field populated
+    _isDiscountOpen = true;
+
+    final BillDiscount discount = BillDiscount.amount(discountAmount);
+    if (discount.problemOn(_totals.subtotal) != null) {
+      // In case the discount is somehow invalid (e.g. exceeds subtotal)
+      return;
+    }
+    _applyDiscount(discount);
+  }
+
   /// Records the customer's phone number, keeping only the digits.
   ///
   /// Punctuation and spaces are stripped, because a number pasted as `+91 98765 43210`
@@ -527,6 +574,15 @@ class CheckoutController extends ChangeNotifier {
     notifyListeners();
 
     unawaited(_lookUpCustomer(digits));
+  }
+
+  void setCustomerName(String value) {
+    if (_customerName == value || isSettled) {
+      return;
+    }
+    _customerName = value;
+    _invalidateSettlement();
+    notifyListeners();
   }
 
   void setNotes(String value) {
@@ -648,6 +704,7 @@ class CheckoutController extends ChangeNotifier {
       // The number, not a customer id. The repository resolves it inside the settlement
       // transaction, so a failed sale cannot leave a customer behind and a retry cannot
       // create a second one.
+      customerName: _customerName.trim().isEmpty ? null : _customerName.trim(),
       customerPhone: normalisedCustomerPhone,
       reference: _referenceOrNull,
       notes: _notesOrNull,
@@ -798,6 +855,9 @@ class CheckoutController extends ChangeNotifier {
     }
 
     _knownCustomer = customer;
+    if (customer.name != null && customer.name!.trim().isNotEmpty && _customerName.isEmpty) {
+      _customerName = customer.name!.trim();
+    }
     _notify();
   }
 

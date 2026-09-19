@@ -54,7 +54,7 @@ void main() {
 
     // Products and variants are untouched by v4.
     expect((await repository.loadCategories()).valueOrNull, hasLength(12));
-    expect((await repository.loadItems()).valueOrNull, hasLength(64));
+    expect((await repository.loadItems()).valueOrNull, hasLength(66));
 
     final List<MenuItem> items = (await repository.loadItems()).valueOrNull!;
     final MenuItem cheesePizza = items.firstWhere(
@@ -109,7 +109,7 @@ void main() {
       final List<MenuItemOption> visible =
           (await repository.loadAllOptions()).valueOrNull!;
 
-      expect(visible, hasLength(171));
+      expect(visible, hasLength(179));
       expect(
         visible.every((MenuItemOption o) => !o.name.contains('(')),
         isTrue,

@@ -21,7 +21,18 @@ dependencies:
 
   # Local database. sqflite is the plain SQLite binding, so the schema and every
   # query stay visible in this repository rather than behind a generator.
+  #
+  # sqflite ships a native plugin on Android, iOS and macOS, so those platforms get
+  # a ready `databaseFactory` for free. It has no plugin for Windows or Linux, where
+  # the global factory is left uninitialised — opening a database there throws
+  # "databaseFactory not initialized" unless we install one ourselves.
   sqflite: 2.4.4
+
+  # SQLite over dart:ffi. Ships the desktop engine and the `databaseFactoryFfi` that
+  # sqflite's global API can be pointed at. Required at runtime on Windows and Linux,
+  # where sqflite has no native plugin; unused on the platforms sqflite already covers.
+  # See lib/core/data/local/sqlite/database_factory_initializer.dart.
+  sqflite_common_ffi: 2.4.3
 
   # Used only to build the database file path.
   path: 1.9.1
@@ -36,6 +47,7 @@ dependencies:
   # Utf16 helpers and calloc for the Win32 FFI structs. Already present transitively; a
   # direct dependency because the Windows transport imports it directly.
   ffi: ^2.1.0
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:
@@ -43,11 +55,9 @@ dev_dependencies:
 
   flutter_lints: ^6.0.0
 
-  # Required to run SQLite inside `flutter test`. sqflite talks to the platform
-  # plugin, which does not exist in the Dart test VM; this provides the native
-  # implementation so the database layer can be tested without a device.
-  # Test-only, never shipped.
-  sqflite_common_ffi: 2.4.3
+  # NOTE: sqflite_common_ffi is a runtime dependency (see above). It is also what lets
+  # the database layer be tested in the Dart VM, where sqflite's platform plugin does
+  # not exist, so tests install `databaseFactoryFfi` directly.
 
 flutter:
   uses-material-design: true

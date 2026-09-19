@@ -84,8 +84,11 @@ class EscPosDocumentFormatter implements PrintDocumentEncoder {
       bold: true,
     );
     builder.line(PrintTimestamp.stamp(receipt.issuedAt));
+    if (receipt.hasCustomerName) {
+      builder.line('Customer: ${receipt.customerName}');
+    }
     if (receipt.hasCustomerPhone) {
-      builder.line('Customer: ${receipt.customerPhone}');
+      builder.line('Phone: ${receipt.customerPhone}');
     }
     builder.separator();
 
@@ -265,6 +268,12 @@ class EscPosDocumentFormatter implements PrintDocumentEncoder {
     builder.row('KOT ${kot.kotNumber}', kot.orderType.label, bold: true);
     builder.row('Bill ${kot.orderNumber}', PrintTimestamp.time(kot.issuedAt));
     builder.line(PrintTimestamp.date(kot.issuedAt));
+    if (kot.hasCustomerName) {
+      builder.line('Customer: ${kot.customerName}');
+    }
+    if (kot.hasCustomerPhone) {
+      builder.line('Phone: ${kot.customerPhone}');
+    }
     builder.separator();
 
     for (final KitchenKotLine line in kot.lines) {

@@ -1,5 +1,6 @@
 import '../../core/data/local/sqlite/sqlite_database.dart';
 import '../../core/data/local/sqlite/sqlite_local_store.dart';
+import '../../core/data/local/sqlite/sqlite_outbox_store.dart';
 import '../../core/data/local/sqlite/sqlite_tables.dart';
 import '../../core/data/remote/remote_store_factory.dart';
 import '../../core/data/sync/sync_endpoint.dart';
@@ -50,6 +51,7 @@ import '../../features/payments/domain/models/refund.dart';
 List<SyncEndpointBase> buildSyncEndpoints(
   SqliteDatabase database,
   RemoteStoreFactory remoteFactory,
+  SqliteOutboxStore outbox,
 ) {
   SyncEndpoint<T> endpoint<T extends SyncableEntity>(
     String table,
@@ -62,6 +64,7 @@ List<SyncEndpointBase> buildSyncEndpoints(
         database: database,
         table: table,
         fromRow: fromRow,
+        outbox: outbox,
       ),
       remote: remoteFactory.create<T>(table, fromRow),
     );

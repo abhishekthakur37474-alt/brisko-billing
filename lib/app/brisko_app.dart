@@ -9,6 +9,7 @@ import '../features/billing/domain/repositories/held_bill_repository.dart';
 import '../features/billing/presentation/controllers/billing_controller.dart';
 import '../features/cloud_sync/presentation/controllers/sync_status_controller.dart';
 import '../features/customers/domain/repositories/customer_repository.dart';
+import '../features/expenses/domain/repositories/expense_repository.dart';
 import '../features/inventory/domain/repositories/inventory_deduction_repository.dart';
 import '../features/inventory/domain/repositories/inventory_repository.dart';
 import '../features/inventory/domain/repositories/recipe_repository.dart';
@@ -98,6 +99,9 @@ class BriskoApp extends StatelessWidget {
           value: dependencies.inventoryDeductionRepository,
         ),
         Provider<KotRepository>.value(value: dependencies.kotRepository),
+        Provider<ExpenseRepository>.value(
+          value: dependencies.expenseRepository,
+        ),
         Provider<SalesReportRepository>.value(
           value: dependencies.salesReportRepository,
         ),
