@@ -58,11 +58,11 @@ class FirebaseOptions {
 
   /// The configuration this build was compiled with.
   ///
-  /// Reads the two client-safe values from the compile-time environment, so the same
-  /// source produces a local-only build by default and a cloud-connected build when the
-  /// project is supplied at build time.
+  /// Hardcoded so a plain `flutter run` / `flutter build` is cloud-connected without
+  /// `--dart-define`. Both values are client-safe; access is still enforced by
+  /// Firestore Security Rules.
   static const FirebaseOptions current = FirebaseOptions(
-    projectId: String.fromEnvironment('BRISKO_FIREBASE_PROJECT_ID'),
-    apiKey: String.fromEnvironment('BRISKO_FIREBASE_API_KEY'),
+    projectId: 'brisko-billing',
+    apiKey: 'AIzaSyDk8DOD4n2P7Bzrj3Cay_DwBKV2s-xOOew',
   );
 }
