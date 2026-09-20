@@ -301,6 +301,7 @@ void main() {
         'lib/features/settings/presentation/widgets/settings_form.dart',
         'lib/features/settings/presentation/widgets/settings_notices.dart',
         'lib/features/settings/presentation/widgets/settings_text_field.dart',
+        'lib/features/settings/presentation/widgets/data_reset_section.dart',
       ];
 
       const Map<String, String> storage = <String, String>{
@@ -320,17 +321,25 @@ void main() {
     });
 
     test('the controller contains no SQL and no table name', () {
+      const Map<String, String> storage = <String, String>{
+        'SQL': r'SELECT|INSERT|UPDATE\s|DELETE\s',
+        'a database handle': r'\bDatabase\b|sqflite|SqliteDatabase',
+        'a table name': r'SqliteTables',
+        'a concrete repository': r'Sqlite\w*Repository',
+      };
+
       expectAbsent(
         'lib/features/settings/presentation/controllers/settings_controller.dart',
-        const <String, String>{
-          'SQL': r'SELECT|INSERT|UPDATE\s|DELETE\s',
-          'a database handle': r'\bDatabase\b|sqflite|SqliteDatabase',
-          'a table name': r'SqliteTables',
-          'a concrete repository': r'Sqlite\w*Repository',
-        },
+        storage,
         because:
             'The controller validates and holds state. Storage is reached '
             'through the SettingsRepository contract.',
+      );
+      expectAbsent(
+        'lib/features/settings/presentation/controllers/data_reset_controller.dart',
+        storage,
+        because:
+            'The wipe controller dispatches; the OperationalDataWiper owns storage.',
       );
     });
 

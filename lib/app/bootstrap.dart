@@ -59,9 +59,11 @@ import '../features/printing/domain/services/print_service.dart';
 import '../features/reports/data/repositories/sqlite_sales_report_repository.dart';
 import '../features/reports/domain/repositories/sales_report_repository.dart';
 import '../features/settings/data/repositories/sqlite_settings_repository.dart';
+import '../features/settings/data/sqlite_operational_data_wiper.dart';
 import '../features/settings/domain/active_pos_settings.dart';
 import '../features/settings/domain/models/pos_settings.dart';
 import '../features/settings/domain/repositories/settings_repository.dart';
+import '../features/settings/domain/services/operational_data_wiper.dart';
 import 'sync/cloud_sync_activation.dart';
 import 'sync/sync_endpoints.dart';
 
@@ -93,6 +95,7 @@ class AppDependencies {
     required this.expenseRepository,
     required this.salesReportRepository,
     required this.settingsRepository,
+    required this.operationalDataWiper,
     required this.activeSettings,
     required this.printer,
     required this.activePrinter,
@@ -187,6 +190,10 @@ class AppDependencies {
   final SalesReportRepository salesReportRepository;
 
   final SettingsRepository settingsRepository;
+
+  /// Removes bills, the menu, orders and the rest of the till's working data
+  /// without touching the sign-in or the settings table.
+  final OperationalDataWiper operationalDataWiper;
 
   /// The configuration this terminal is running with, read once at start-up.
   ///
@@ -449,6 +456,10 @@ Future<AppDependencies> bootstrap({
     expenseRepository: SqliteExpenseRepository(database: database),
     salesReportRepository: SqliteSalesReportRepository(database: database),
     settingsRepository: settings,
+    operationalDataWiper: SqliteOperationalDataWiper(
+      database: database,
+      outbox: outbox,
+    ),
     activeSettings: activeSettings,
     printer: printer,
     activePrinter: printer,

@@ -3,12 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../billing/presentation/controllers/billing_controller.dart';
 import '../../../printing/domain/printers/active_printer.dart';
 import '../../../printing/domain/services/active_print_profile.dart';
 import '../../../printing/domain/services/print_service.dart';
 import '../../../printing/presentation/controllers/printer_controller.dart';
 import '../../domain/active_pos_settings.dart';
 import '../../domain/repositories/settings_repository.dart';
+import '../../domain/services/operational_data_wiper.dart';
+import '../controllers/data_reset_controller.dart';
 import '../controllers/settings_controller.dart';
 import '../widgets/settings_form.dart';
 import '../widgets/settings_notices.dart';
@@ -69,6 +72,12 @@ class SettingsScreen extends StatelessWidget {
             printer: context.read<ActivePrinter>(),
             printService: context.read<PrintService>(),
             printProfile: context.read<ActivePrintProfile>(),
+          ),
+        ),
+        ChangeNotifierProvider<DataResetController>(
+          create: (BuildContext context) => DataResetController(
+            wiper: context.read<OperationalDataWiper>(),
+            billing: context.read<BillingController>(),
           ),
         ),
       ],

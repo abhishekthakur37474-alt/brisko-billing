@@ -139,6 +139,16 @@ void main() {
     expect((await reopened.pendingCount()).valueOrNull, 1);
   });
 
+  test('clearAll empties the queue', () async {
+    await outbox.enqueue(entry(entityId: 'one'));
+    await outbox.enqueue(entry(entityId: 'two'));
+    expect((await outbox.pendingCount()).valueOrNull, 2);
+
+    expect((await outbox.clearAll()).isOk, isTrue);
+    expect((await outbox.pendingCount()).valueOrNull, 0);
+    expect((await outbox.dequeueBatch()).valueOrNull, isEmpty);
+  });
+
   test('nothing is queued yet, because nothing drains the queue', () async {
     // Writes do not enqueue until a backend exists. Enqueueing now would grow
     // this table without bound for every bill the outlet ever takes.

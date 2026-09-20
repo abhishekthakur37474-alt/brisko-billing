@@ -2,6 +2,12 @@ import 'package:brisko_billing/app/bootstrap.dart';
 import 'package:brisko_billing/app/brisko_app.dart';
 import 'package:brisko_billing/app/shell/pos_section.dart';
 import 'package:brisko_billing/core/data/local/sqlite/sqlite_database.dart';
+import 'package:brisko_billing/core/data/local/sqlite/sqlite_tables.dart';
+import 'package:brisko_billing/features/auth/data/auth_session_store.dart';
+import 'package:brisko_billing/features/customers/data/repositories/sqlite_customer_repository.dart';
+import 'package:brisko_billing/features/orders/data/repositories/sqlite_order_repository.dart';
+import 'package:brisko_billing/features/orders/domain/models/order.dart';
+import 'package:brisko_billing/features/orders/domain/models/order_item.dart';
 import 'package:brisko_billing/features/orders/domain/models/order_type.dart';
 import 'package:brisko_billing/features/settings/data/repositories/sqlite_settings_repository.dart';
 import 'package:brisko_billing/features/settings/domain/models/pos_settings.dart';
@@ -10,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/failing_settings_repository.dart';
+import '../helpers/fixtures.dart';
 import '../helpers/test_database.dart';
 import '../helpers/test_dependencies.dart';
 
@@ -114,6 +121,8 @@ void main() {
       expect(find.text('POS behaviour'), findsOneWidget);
       expect(find.text('Receipt'), findsOneWidget);
       expect(find.text('Printing'), findsOneWidget);
+      expect(find.text('Data'), findsOneWidget);
+      expect(find.text('Clear till data'), findsOneWidget);
     });
 
     testWidgets('an unconfigured terminal shows an empty form', (
@@ -542,6 +551,107 @@ void main() {
         ),
         OrderType.delivery,
       );
+    });
+  });
+
+  group('clearing till data', () {
+    Future<int> tableCount(WidgetTester tester, String table) async {
+      final int? n = await tester.runAsync<int>(() async {
+        final List<Map<String, Object?>> rows = await database.database
+            .rawQuery('SELECT COUNT(*) AS count FROM $table');
+        return (rows.first['count'] as int?) ?? 0;
+      });
+      return n!;
+    }
+
+    Future<void> seedBillAndLogin(WidgetTester tester) async {
+      await tester.runAsync(() async {
+        expect(
+          (await SqliteSettingsRepository(database: database).writeAll(
+            <String, String?>{
+              SettingKeys.businessName: 'Brisko Pizza Kothrud',
+              AuthSessionStore.keyAccountEmail: 'till@example.com',
+            },
+          )).isOk,
+          isTrue,
+        );
+        expect(
+          (await SqliteCustomerRepository(
+            database: database,
+          ).save(Fixtures.customer())).isOk,
+          isTrue,
+        );
+        final Order order = Fixtures.order(orderNumber: 'T-0001');
+        expect(
+          (await SqliteOrderRepository(database: database).saveOrder(
+            order,
+            items: <OrderItem>[Fixtures.orderItem(orderId: order.id)],
+          )).isOk,
+          isTrue,
+        );
+      });
+    }
+
+    Future<void> revealClearSwitch(WidgetTester tester) async {
+      await tester.ensureVisible(find.text('Clear till data'));
+      await tester.pump();
+    }
+
+    testWidgets('cancelling the confirmation leaves bills and the menu', (
+      WidgetTester tester,
+    ) async {
+      await seedBillAndLogin(tester);
+      await openSettings(tester);
+      await revealClearSwitch(tester);
+
+      expect(await tableCount(tester, SqliteTables.orders), 1);
+      expect(await tableCount(tester, SqliteTables.categories), greaterThan(0));
+
+      await tap(
+        tester,
+        find.widgetWithText(SwitchListTile, 'Clear till data'),
+      );
+      expect(find.text('Clear till data?'), findsOneWidget);
+
+      await tap(tester, find.widgetWithText(TextButton, 'Cancel'));
+
+      expect(find.text('Clear till data?'), findsNothing);
+      expect(find.text('Till data cleared. Login and settings are unchanged.'), findsNothing);
+      expect(await tableCount(tester, SqliteTables.orders), 1);
+      expect(await tableCount(tester, SqliteTables.customers), 1);
+      expect(await tableCount(tester, SqliteTables.categories), greaterThan(0));
+      expect(
+        (await stored(tester))[SettingKeys.businessName],
+        'Brisko Pizza Kothrud',
+      );
+    });
+
+    testWidgets('confirming deletes bills and the menu, and keeps the sign-in', (
+      WidgetTester tester,
+    ) async {
+      await seedBillAndLogin(tester);
+      await openSettings(tester);
+      await revealClearSwitch(tester);
+
+      await tap(
+        tester,
+        find.widgetWithText(SwitchListTile, 'Clear till data'),
+      );
+      await tap(tester, find.widgetWithText(FilledButton, 'Clear data'));
+
+      expect(
+        find.text('Till data cleared. Login and settings are unchanged.'),
+        findsOneWidget,
+      );
+      expect(await tableCount(tester, SqliteTables.orders), 0);
+      expect(await tableCount(tester, SqliteTables.orderItems), 0);
+      expect(await tableCount(tester, SqliteTables.customers), 0);
+      expect(await tableCount(tester, SqliteTables.categories), 0);
+      expect(await tableCount(tester, SqliteTables.menuItems), 0);
+
+      final Map<String, String?> values = await stored(tester);
+      expect(values[SettingKeys.businessName], 'Brisko Pizza Kothrud');
+      expect(values[AuthSessionStore.keyAccountEmail], 'till@example.com');
     });
   });
 }

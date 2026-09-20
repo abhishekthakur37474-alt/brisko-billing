@@ -99,6 +99,14 @@ class SqliteOutboxStore implements OutboxStore {
   }
 
   @override
+  Future<Result<void>> clearAll() {
+    return SqliteErrorMapper.guard<void>(() async {
+      await _db.delete(SqliteTables.outbox);
+      await _publishPendingCount();
+    }, context: 'clear the upload queue');
+  }
+
+  @override
   Future<Result<int>> pendingCount() {
     return SqliteErrorMapper.guard<int>(
       _readPendingCount,

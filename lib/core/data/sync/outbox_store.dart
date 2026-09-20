@@ -24,6 +24,10 @@ abstract interface class OutboxStore {
   /// Resets the attempt count of all pending entries to 0 so they can be retried.
   Future<Result<void>> resetAttemptCounts();
 
+  /// Empties the queue. Used when operational data is cleared so leftover
+  /// snapshots cannot be uploaded after the rows they describe are gone.
+  Future<Result<void>> clearAll();
+
   /// How many writes are still waiting. Drives the sync indicator in the UI.
   Future<Result<int>> pendingCount();
 

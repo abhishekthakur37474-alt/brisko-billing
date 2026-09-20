@@ -34,6 +34,7 @@ import 'package:brisko_billing/features/printing/domain/printers/thermal_printer
 import 'package:brisko_billing/features/reports/data/repositories/sqlite_sales_report_repository.dart';
 import 'package:brisko_billing/features/reports/domain/repositories/sales_report_repository.dart';
 import 'package:brisko_billing/features/settings/data/repositories/sqlite_settings_repository.dart';
+import 'package:brisko_billing/features/settings/data/sqlite_operational_data_wiper.dart';
 import 'package:brisko_billing/features/settings/domain/active_pos_settings.dart';
 import 'package:brisko_billing/features/settings/domain/models/pos_settings.dart';
 import 'package:brisko_billing/features/settings/domain/repositories/settings_repository.dart';
@@ -160,6 +161,10 @@ class TestDependencies {
           salesReportRepository ??
           SqliteSalesReportRepository(database: database),
       settingsRepository: resolvedSettings,
+      operationalDataWiper: SqliteOperationalDataWiper(
+        database: database,
+        outbox: outbox,
+      ),
       activeSettings: ActivePosSettings(settings: activeSettings),
       printer: resolved,
       activePrinter: resolved,

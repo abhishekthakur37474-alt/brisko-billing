@@ -10,6 +10,7 @@ import '../../../printing/domain/models/print_settings.dart';
 import '../../../printing/presentation/widgets/printer_setup_section.dart';
 import '../../domain/models/pos_settings.dart';
 import '../controllers/settings_controller.dart';
+import 'data_reset_section.dart';
 import 'settings_notices.dart';
 import 'settings_text_field.dart';
 
@@ -81,6 +82,12 @@ class SettingsForm extends StatelessWidget {
                   // The signed-in account and sign-out. Renders nothing on a local-only
                   // build or when signed out, and nothing outside the full shell.
                   const AccountSettingsSection(),
+                  const SizedBox(height: 16),
+                  // Clears bills, the menu, orders and reports. Login and outlet
+                  // configuration are left alone. Saved by its own controller, not
+                  // by the form Save, because it is a destruction rather than a
+                  // configuration.
+                  const DataResetSection(),
                 ],
               ),
             ),
