@@ -53,6 +53,10 @@ class CheckoutConfirmStep extends StatelessWidget {
                 // carry.
                 value: _customerLabel(controller),
               ),
+              _ConfirmRow(
+                label: 'Kitchen slip',
+                value: controller.printKitchenSlip ? 'Print' : 'Do not print',
+              ),
               if (reference != null)
                 _ConfirmRow(label: 'Reference', value: reference),
               if (method == PaymentMethod.cash) ...<Widget>[

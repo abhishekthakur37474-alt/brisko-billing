@@ -85,7 +85,7 @@ class EscPosDocumentFormatter implements PrintDocumentEncoder {
     );
     builder.line(PrintTimestamp.stamp(receipt.issuedAt));
     if (receipt.hasCustomerName) {
-      builder.line('Customer: ${receipt.customerName}');
+      builder.line('Customer: ${receipt.customerName}', bold: true);
     }
     if (receipt.hasCustomerPhone) {
       builder.line('Phone: ${receipt.customerPhone}');
@@ -193,14 +193,8 @@ class EscPosDocumentFormatter implements PrintDocumentEncoder {
   /// placeholder GSTIN: an invented tax number on an invoice is worse than a missing
   /// one, so a blank setting produces a blank space.
   ///
-  /// The outlet logo, when one is bundled and the printer has a graphics mode, is the
-  /// first thing on the paper, centred above the name. It is the outlet's own image,
-  /// reduced to printable dots above the printing layer; there is no placeholder or
-  /// generated logo, so a build without the asset simply leads with the name.
+  /// The outlet name leads the paper. A logo is not printed on the customer bill.
   void _businessHeader(EscPosBuilder builder, BusinessIdentity business) {
-    if (business.hasLogo && profile.canPrintGraphics) {
-      builder.image(business.logo!);
-    }
     builder.centred(business.name, bold: true, doubleHeight: true);
 
     if (business.hasAddress) {
@@ -269,7 +263,7 @@ class EscPosDocumentFormatter implements PrintDocumentEncoder {
     builder.row('Bill ${kot.orderNumber}', PrintTimestamp.time(kot.issuedAt));
     builder.line(PrintTimestamp.date(kot.issuedAt));
     if (kot.hasCustomerName) {
-      builder.line('Customer: ${kot.customerName}');
+      builder.line('Customer: ${kot.customerName}', bold: true);
     }
     if (kot.hasCustomerPhone) {
       builder.line('Phone: ${kot.customerPhone}');

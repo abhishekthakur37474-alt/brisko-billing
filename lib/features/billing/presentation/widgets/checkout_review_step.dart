@@ -71,6 +71,20 @@ class CheckoutReviewStep extends StatelessWidget {
         ],
         const _DiscountControl(),
         const SizedBox(height: 24),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Print kitchen slip'),
+          subtitle: const Text(
+            'Send a KOT to the printer after this sale. Turned off, the '
+            'slip is still written for the kitchen board; only the paper '
+            'is skipped.',
+          ),
+          value: controller.printKitchenSlip,
+          onChanged: (bool value) => context
+              .read<CheckoutController>()
+              .setPrintKitchenSlip(isEnabled: value),
+        ),
+        const SizedBox(height: 24),
         Text('Note on the bill', style: theme.textTheme.titleSmall),
         const SizedBox(height: 8),
         const _NotesField(),
@@ -374,7 +388,7 @@ class _CustomerInfoFieldsState extends State<_CustomerInfoFields> {
             hintText: '${CustomerPhone.digits} digits',
             prefixIcon: const Icon(Icons.phone_outlined),
             errorText: phoneProblem,
-            helperText: 'Needed for every order.',
+            helperText: 'Optional.',
           ),
           onChanged: context.read<CheckoutController>().setCustomerPhone,
         ),

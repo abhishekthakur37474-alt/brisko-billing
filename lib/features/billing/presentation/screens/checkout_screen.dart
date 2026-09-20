@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/money/money_display.dart';
+import '../../../customers/domain/models/customer_phone.dart';
 import '../../../customers/domain/repositories/customer_repository.dart';
 import '../../../inventory/domain/repositories/inventory_deduction_repository.dart';
 import '../../../printing/domain/services/print_service.dart';
@@ -112,6 +113,16 @@ class _CheckoutView extends StatelessWidget {
                 child: BillSummaryPanel(
                   cart: controller.cart,
                   totals: controller.totals,
+                  customerName: controller.trimmedCustomerName.isEmpty
+                      ? null
+                      : controller.trimmedCustomerName,
+                  customerPhone: controller.isCustomerPhoneComplete
+                      ? CustomerPhone.forDisplay(
+                          controller.normalisedCustomerPhone!,
+                        )
+                      : (controller.hasCustomerPhone
+                            ? controller.customerPhone
+                            : null),
                 ),
               ),
             ],

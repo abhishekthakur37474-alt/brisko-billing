@@ -129,13 +129,18 @@ class _BillRow extends StatelessWidget {
   /// an empty space looks like a rendering fault.
   String _who() {
     final String? name = bill.customerName?.trim();
-    if (name != null && name.isNotEmpty) {
+    final String? phone = bill.customerPhone;
+    final bool hasName = name != null && name.isNotEmpty;
+    final bool hasPhone = phone != null && phone.trim().isNotEmpty;
+    if (hasName && hasPhone) {
+      return '$name  ·  ${CustomerPhone.forDisplay(phone)}';
+    }
+    if (hasName) {
       return name;
     }
-    final String? phone = bill.customerPhone;
-    if (phone == null) {
-      return 'Walk-in';
+    if (hasPhone) {
+      return CustomerPhone.forDisplay(phone);
     }
-    return CustomerPhone.forDisplay(phone);
+    return 'Walk-in';
   }
 }

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/money/money_display.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../customers/domain/models/customer_phone.dart';
 import '../../../orders/domain/models/order.dart';
 import '../../../payments/domain/models/payment_method.dart';
 import '../../../printing/domain/models/sale_print_run.dart';
@@ -77,6 +78,18 @@ class CheckoutSuccessStep extends StatelessWidget {
                       label: 'Order type',
                       value: order.orderType.label,
                     ),
+                    if (controller.hasCustomerName)
+                      _SettledRow(
+                        label: 'Customer',
+                        value: controller.trimmedCustomerName,
+                      ),
+                    if (controller.isCustomerPhoneComplete)
+                      _SettledRow(
+                        label: 'Phone',
+                        value: CustomerPhone.forDisplay(
+                          controller.normalisedCustomerPhone!,
+                        ),
+                      ),
                     _SettledRow(label: 'Status', value: order.status.label),
                   ],
                 ),

@@ -128,7 +128,7 @@ void main() {
   Future<void> openCheckout(WidgetTester tester) =>
       tap(tester, find.widgetWithText(FilledButton, 'Checkout \u20b9320.00'));
 
-  /// Name and phone every order requires before payment.
+  /// Name every order requires before payment. Phone is optional.
   Future<void> fillCustomer(WidgetTester tester) async {
     await tester.enterText(
       inCheckout(find.widgetWithText(TextField, 'Customer name')),

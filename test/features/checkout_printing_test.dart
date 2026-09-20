@@ -126,6 +126,22 @@ void main() {
       );
     });
 
+    test('turning the kitchen slip off prints only the receipt', () async {
+      final CheckoutController controller = await readyToCharge();
+      controller.setPrintKitchenSlip(isEnabled: false);
+
+      await controller.submit();
+
+      expect(controller.isSettled, isTrue);
+      expect(controller.isPrinted, isTrue);
+      expect(printer.documents, hasLength(1));
+      expect(
+        controller.printRun!.jobs.map((PrintJob job) => job.kind),
+        <PrintJobKind>[PrintJobKind.customerReceipt],
+      );
+      expect(await rowCount('kot_records'), 1);
+    });
+
     test('a printer failure leaves the sale settled and says so', () async {
       final CheckoutController controller = await readyToCharge();
       printer.failOnWrite = true;

@@ -75,7 +75,7 @@ void main() {
     quantity: quantity,
   );
 
-  /// Name and number every order now requires before payment.
+  /// Name every order requires before payment. Phone is optional.
   void fillCustomer(
     CheckoutController controller, {
     String name = 'Test Customer',
@@ -246,7 +246,7 @@ void main() {
   });
 
   group('the customer', () {
-    test('every order needs a name and a phone number', () async {
+    test('every order needs a name; the phone is optional', () async {
       await ringUpPizza();
       final CheckoutController controller = openCheckout(withCustomer: false);
 
@@ -276,14 +276,16 @@ void main() {
       expect(controller.canProceedToPayment, isTrue);
     });
 
-    test('an order that leaves the outlet still needs both', () async {
+    test('an order that leaves the outlet still needs a name, not a phone', () async {
       await ringUpPizza();
       final CheckoutController controller = openCheckout(withCustomer: false);
 
       controller.selectOrderType(OrderType.delivery);
       controller.setCustomerName('Ravi');
 
-      expect(controller.canProceedToPayment, isFalse);
+      expect(controller.hasCustomerPhone, isFalse);
+      expect(controller.isCustomerAcceptable, isTrue);
+      expect(controller.canProceedToPayment, isTrue);
 
       controller.setCustomerPhone('9000000001');
 
@@ -294,6 +296,9 @@ void main() {
     test('a half-typed number blocks the flow even when optional', () async {
       await ringUpPizza();
       final CheckoutController controller = openCheckout(withCustomer: false);
+
+      controller.setCustomerName('Ravi');
+      expect(controller.isCustomerAcceptable, isTrue);
 
       controller.setCustomerPhone('90000');
 
@@ -332,6 +337,8 @@ void main() {
       await ringUpPizza();
       final CheckoutController controller = openCheckout(withCustomer: false);
 
+      controller.setCustomerName('Ravi');
+
       // Thirteen digits, with no prefix that accounts for the extra three. Keeping the
       // first ten would produce 9000000001 — a real number belonging to somebody else —
       // and file the bill against them. It is refused instead.
@@ -348,6 +355,8 @@ void main() {
     test('a number that is not a mobile number is refused', () async {
       await ringUpPizza();
       final CheckoutController controller = openCheckout(withCustomer: false);
+
+      controller.setCustomerName('Ravi');
 
       // Ten digits, but no Indian mobile number starts with 1.
       controller.setCustomerPhone('1123456789');
@@ -393,6 +402,21 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(controller.isReturningCustomer, isFalse);
+      expect(await rowCount('customers'), 0);
+    });
+
+    test('a name without a phone settles as a walk-in', () async {
+      await ringUpPizza();
+      final CheckoutController controller = openCheckout(withCustomer: false);
+      controller.setCustomerName('Ravi');
+      controller.goToPayment();
+      controller.selectPaymentMethod(PaymentMethod.card);
+      controller.goToConfirm();
+
+      await controller.submit();
+
+      expect(controller.isSettled, isTrue);
+      expect(controller.settledOrder!.customerId, isNull);
       expect(await rowCount('customers'), 0);
     });
 
@@ -538,6 +562,35 @@ void main() {
         (await customers.findByPhone('+91 98765 43210')).valueOrNull!.id,
         customer.id,
       );
+    });
+  });
+
+  group('the kitchen slip', () {
+    test('starts from the setting and can be turned off for this bill', () async {
+      await ringUpPizza();
+      final CheckoutController controller = openCheckout();
+
+      expect(controller.printKitchenSlip, isTrue);
+
+      controller.setPrintKitchenSlip(isEnabled: false);
+
+      expect(controller.printKitchenSlip, isFalse);
+      expect(controller.canProceedToPayment, isTrue);
+    });
+
+    test('turning it off still writes the slip and skips the paper', () async {
+      await ringUpPizza();
+      final CheckoutController controller = openCheckout();
+      controller.setPrintKitchenSlip(isEnabled: false);
+      controller.goToPayment();
+      controller.selectPaymentMethod(PaymentMethod.card);
+      controller.goToConfirm();
+
+      await controller.submit();
+
+      expect(controller.isSettled, isTrue);
+      expect(await rowCount('kot_records'), 1);
+      expect(controller.printKitchenSlip, isFalse);
     });
   });
 
@@ -887,11 +940,13 @@ void main() {
       controller.setCustomerPhone('9000000009');
       controller.selectPaymentMethod(PaymentMethod.card);
       controller.setNotes('changed');
+      controller.setPrintKitchenSlip(isEnabled: false);
 
       expect(controller.orderType, OrderType.takeaway);
       expect(controller.customerPhone, isEmpty);
       expect(controller.paymentMethod, PaymentMethod.cash);
       expect(controller.notes, isEmpty);
+      expect(controller.printKitchenSlip, isTrue);
       expect(
         (await orders.findOrder(controller.settledOrder!.id))
             .valueOrNull!

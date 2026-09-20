@@ -124,8 +124,9 @@ class CheckoutController extends ChangeNotifier {
 
   /// Whether a kitchen slip is sent to the printer after this sale.
   ///
-  /// Read from Settings when the flow opened. The slip is still written either way.
-  final bool _printKitchenSlip;
+  /// Starts from Settings when the flow opened. The cashier can change it on this
+  /// bill; the slip is still written either way.
+  bool _printKitchenSlip;
 
   /// Whether this bill asks for a name and phone, and prints both on the receipt.
   ///
@@ -369,14 +370,29 @@ class CheckoutController extends ChangeNotifier {
   /// True when there is a bill worth settling at all.
   bool get hasBill => _cart.isNotEmpty && _totals.isPayable;
 
-  /// True when the order type means the customer has to be contactable.
-  bool get requiresCustomerPhone => _askCustomerDetails;
+  /// True when a phone number must be entered before payment.
+  ///
+  /// Phone is optional. A half-typed number still has to be completed or cleared.
+  bool get requiresCustomerPhone => false;
 
   /// True when checkout collects a name and phone, and the receipt prints both.
   bool get askCustomerDetails => _askCustomerDetails;
 
   /// True when a kitchen slip is sent to the printer after this sale.
   bool get printKitchenSlip => _printKitchenSlip;
+
+  /// Turns kitchen-slip paper on or off for this bill.
+  ///
+  /// The ticket is still written for the kitchen board. This only decides whether
+  /// paper comes out after settlement. Ignored once the bill is settled, because
+  /// the print already ran with the choice that was in force then.
+  void setPrintKitchenSlip({required bool isEnabled}) {
+    if (_printKitchenSlip == isEnabled || isSettled) {
+      return;
+    }
+    _printKitchenSlip = isEnabled;
+    notifyListeners();
+  }
 
   bool get hasCustomerPhone => _customerPhone.isNotEmpty;
 
@@ -391,9 +407,10 @@ class CheckoutController extends ChangeNotifier {
 
   /// True when the customer fields this bill requires have been filled.
   ///
-  /// When Settings asks for a name and phone, both are required. When it does not,
-  /// a walk-in is acceptable — but a half-typed number still blocks, because filing
-  /// the bill under a stranger is worse than leaving it unnamed.
+  /// When Settings asks for customer details, a name is required and the phone is
+  /// optional. When it does not, a walk-in is acceptable — but a half-typed number
+  /// still blocks, because filing the bill under a stranger is worse than leaving
+  /// it unnamed.
   bool get isCustomerAcceptable {
     if (hasCustomerPhone && !isCustomerPhoneComplete) {
       return false;
@@ -401,19 +418,17 @@ class CheckoutController extends ChangeNotifier {
     if (!_askCustomerDetails) {
       return true;
     }
-    return hasCustomerName && isCustomerPhoneComplete;
+    return hasCustomerName;
   }
 
   /// What is wrong with the number entered, or `null` when there is nothing to say.
   ///
-  /// A missing or unusable number blocks the sale when a number is required. Anything
-  /// that cannot be stored says what is wanted instead, because the alternative — a
-  /// silently shortened number — files the bill under a stranger.
+  /// Phone is optional, so a blank field is fine. Anything that cannot be stored
+  /// says what is wanted instead, because the alternative — a silently shortened
+  /// number — files the bill under a stranger.
   String? get customerPhoneProblem {
     if (!hasCustomerPhone) {
-      return _askCustomerDetails
-          ? 'A phone number is needed for every order.'
-          : null;
+      return null;
     }
     return isCustomerPhoneComplete ? null : CustomerPhone.requirement;
   }

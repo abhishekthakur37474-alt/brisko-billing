@@ -169,6 +169,7 @@ void main() {
 
       expect(paper.hasLineContaining('Customer: Ravi'), isTrue);
       expect(paper.hasLineContaining('Phone: 9876543210'), isTrue);
+      expect(paper.hasCommand(EscPosCommands.boldOn), isTrue);
     });
 
     test('a walk-in gets no customer line', () {

@@ -7,6 +7,7 @@ import '../../../../core/money/money.dart';
 import '../../../../core/money/money_display.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/domain/services/manager_auth_service.dart';
+import '../../../customers/domain/models/customer_phone.dart';
 import '../../../customers/domain/repositories/customer_repository.dart';
 import '../../../payments/domain/models/payment_method.dart';
 import '../../../payments/domain/models/refund.dart';
@@ -664,8 +665,13 @@ class _Header extends StatelessWidget {
         _DetailRow(label: 'Order type', value: order.orderType.label),
         _DetailRow(
           label: 'Customer',
-          value: controller.customerDisplayName,
+          value: controller.customerName ?? 'Walk-in',
         ),
+        if (controller.customerPhone != null)
+          _DetailRow(
+            label: 'Phone',
+            value: CustomerPhone.forDisplay(controller.customerPhone!),
+          ),
         _DetailRow(label: 'Status', value: order.status.label),
         if (order.notes != null && order.notes!.trim().isNotEmpty)
           _DetailRow(label: 'Note', value: order.notes!.trim()),

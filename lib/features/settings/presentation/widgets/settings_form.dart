@@ -254,8 +254,9 @@ class _PosBehaviourSection extends StatelessWidget {
           contentPadding: EdgeInsets.zero,
           title: const Text('Ask customer name and phone'),
           subtitle: const Text(
-            'Collect a name and phone on checkout, and print both on the '
-            'customer bill. Turned off, walk-in bills skip those fields.',
+            'Collect a name on checkout, with an optional phone, and print '
+            'them on the customer bill. Turned off, walk-in bills skip those '
+            'fields.',
           ),
           value: controller.askCustomerDetails,
           onChanged: (bool value) =>

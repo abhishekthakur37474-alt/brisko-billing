@@ -234,9 +234,9 @@ void main() {
     );
   });
 
-  group('the logo raster is the existing buffer-safe band run', () {
+  group('the customer bill does not print a logo', () {
     test(
-      '7. the first receipt and the reprint emit identical logo bytes, in bands',
+      '7. a receipt with a configured logo still emits no raster',
       () async {
         final Order order = await sellPizza();
         final PrintService printing = printingWithLogo();
@@ -247,31 +247,10 @@ void main() {
         await printing.reprintReceipt(order.id);
         final EscPosTranscript reprint = documentAt(printer.documents.length - 1);
 
-        final EscPosRasterImage? firstLogo = firstReceipt.logo;
-        final EscPosRasterImage? reprintLogo = reprint.logo;
-
-        // A logo was emitted on both, as a run of GS v 0 bands rather than one command.
-        expect(firstLogo, isNotNull);
-        expect(reprintLogo, isNotNull);
-        expect(firstReceipt.rasterImages.length, greaterThanOrEqualTo(1));
-
-        // The stitched image is the source bitmap, unchanged between the two prints.
-        expect(firstLogo!.widthBytes, logo.widthBytes);
-        expect(firstLogo.heightDots, logo.height);
-        expect(firstLogo.data.length, firstLogo.expectedByteCount);
-
-        // Byte-for-byte identical: the first print is not a different construction from
-        // the reprint. Any corruption on the first receipt was the printer's buffer, not
-        // the bytes the application produced.
-        expect(reprintLogo!.widthBytes, firstLogo.widthBytes);
-        expect(reprintLogo.heightDots, firstLogo.heightDots);
-        expect(reprintLogo.data, firstLogo.data);
-
-        // Every band's declared size matches the data that followed it, so no band can
-        // make the printer read image bytes as commands.
-        for (final EscPosRasterImage band in firstReceipt.rasterImages) {
-          expect(band.data.length, band.expectedByteCount);
-        }
+        expect(firstReceipt.rasterImages, isEmpty);
+        expect(reprint.rasterImages, isEmpty);
+        expect(firstReceipt.hasLineContaining('Bill ${order.orderNumber}'), isTrue);
+        expect(reprint.hasLineContaining('Bill ${order.orderNumber}'), isTrue);
       },
     );
   });

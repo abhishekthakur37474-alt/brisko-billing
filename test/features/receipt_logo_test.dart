@@ -208,7 +208,7 @@ void main() {
   group('the receipt logo', () {
     const EscPosDocumentFormatter formatter = EscPosDocumentFormatter();
 
-    test('a configured logo prints above the outlet name, centred', () {
+    test('a configured logo is not printed on the customer bill', () {
       final MonochromeBitmap logo = sampleLogo(width: 24, height: 16);
       final EscPosTranscript paper = EscPosTranscript.of(
         formatter.encode(
@@ -216,33 +216,7 @@ void main() {
         ),
       );
 
-      // The logo is on the paper, at the dimensions the source bitmap had.
-      expect(paper.rasterImages, hasLength(1));
-      final EscPosRasterImage raster = paper.rasterImages.single;
-      expect(raster.widthBytes, logo.widthBytes); // 3
-      expect(raster.heightDots, logo.height); // 16
-      expect(raster.data, hasLength(raster.expectedByteCount)); // 48
-
-      // And it is the first thing printed: the raster command comes before the
-      // double-height command that sets the outlet name.
-      final int logoAt = paper.commands.indexWhere(
-        (List<int> command) =>
-            command.length >= 2 &&
-            command[0] == EscPosCommands.gs &&
-            command[1] == 0x76,
-      );
-      final int nameSizeAt = paper.commands.indexWhere(
-        (List<int> command) =>
-            command.length == EscPosCommands.sizeDoubleHeight.length &&
-            command.join(',') == EscPosCommands.sizeDoubleHeight.join(','),
-      );
-      expect(logoAt, greaterThanOrEqualTo(0));
-      expect(nameSizeAt, greaterThan(logoAt));
-
-      // Centred: the command immediately before the raster is align-centre.
-      expect(paper.commands[logoAt - 1], EscPosCommands.alignCentre);
-
-      // The name still heads the text of the bill.
+      expect(paper.rasterImages, isEmpty);
       expect(paper.hasLineContaining('BRISKO PIZZA'), isTrue);
     });
 

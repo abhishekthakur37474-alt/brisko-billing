@@ -1,7 +1,6 @@
 import 'package:brisko_billing/core/money/money.dart';
 import 'package:brisko_billing/features/orders/domain/models/order_type.dart';
 import 'package:brisko_billing/features/payments/domain/models/payment_method.dart';
-import 'package:brisko_billing/features/printing/data/escpos/escpos_commands.dart';
 import 'package:brisko_billing/features/printing/data/escpos/escpos_document_formatter.dart';
 import 'package:brisko_billing/features/printing/domain/models/business_identity.dart';
 import 'package:brisko_billing/features/printing/domain/models/monochrome_bitmap.dart';
@@ -65,62 +64,15 @@ void main() {
 
   const EscPosDocumentFormatter formatter = EscPosDocumentFormatter();
 
-  group('the real receipt byte stream carries a well-framed logo', () {
-    test('the logo is emitted as more than one buffer-safe band', () {
+  group('the customer bill does not print a logo', () {
+    test('a configured logo still emits no raster command', () {
       final EscPosTranscript paper = EscPosTranscript.of(
         formatter.encode(fullReceipt()),
       );
 
-      expect(paper.rasterImages.length, greaterThan(1));
-      for (final EscPosRasterImage band in paper.rasterImages) {
-        // Header and payload agree exactly, and the payload stays under the buffer
-        // budget that caused the overrun.
-        expect(band.data, hasLength(band.expectedByteCount));
-        expect(band.widthBytes, 30);
-        expect(
-          band.data.length,
-          lessThanOrEqualTo(EscPosCommands.rasterMaxBandBytes),
-        );
-      }
-    });
-
-    test('the bands stitch back to a full 240×240, 7200-byte image', () {
-      final EscPosTranscript paper = EscPosTranscript.of(
-        formatter.encode(fullReceipt()),
-      );
-
-      final EscPosRasterImage stitched = paper.logo!;
-      expect(stitched.widthBytes, 30);
-      expect(stitched.heightDots, 240);
-      expect(stitched.data, hasLength(30 * 240)); // 7200
-    });
-
-    test('the logo prints before BRISKO PIZZA, with no garbage between', () {
-      final EscPosTranscript paper = EscPosTranscript.of(
-        formatter.encode(fullReceipt()),
-      );
-
-      // The first raster header comes before the outlet name is printed.
-      final int logoAt = paper.commands.indexWhere(
-        (List<int> c) => c.length >= 2 && c[0] == EscPosCommands.gs && c[1] == 0x76,
-      );
-      expect(logoAt, greaterThanOrEqualTo(0));
-
-      // BRISKO PIZZA is a clean printed line: the image payload did not leak into text.
+      expect(paper.rasterImages, isEmpty);
       expect(paper.hasLineContaining('BRISKO PIZZA'), isTrue);
-
-      // Nothing prints as text ahead of the outlet name. The only lines before it are
-      // the blank line the image itself ends on; there is no run of stray characters.
-      final int nameLine = paper.lines.indexWhere(
-        (String line) => line.contains('BRISKO PIZZA'),
-      );
-      for (int i = 0; i < nameLine; i++) {
-        expect(
-          paper.lines[i].trim(),
-          isEmpty,
-          reason: 'no garbage should print above the outlet name',
-        );
-      }
+      expect(paper.lines.first.contains('BRISKO PIZZA'), isTrue);
     });
 
     test('the receipt still carries the feedback QR and the GST/discount lines', () {
@@ -128,9 +80,7 @@ void main() {
         formatter.encode(fullReceipt()),
       );
 
-      // Feedback QR intact.
       expect(paper.qrPayloads, contains('https://brisko.example/review/42'));
-      // GST split and the discount survive alongside the banded logo.
       expect(paper.hasLineContaining('CGST'), isTrue);
       expect(paper.hasLineContaining('SGST'), isTrue);
       expect(paper.hasLineContaining('Discount'), isTrue);
