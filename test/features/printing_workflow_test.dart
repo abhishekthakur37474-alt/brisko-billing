@@ -141,16 +141,18 @@ void main() {
       size: 'Medium',
       options: <String>['Extra Cheese'],
     );
-    final CheckoutController controller = CheckoutController(
-      cart: billing.cart,
-      checkoutRepository: checkoutRepository,
-      customerRepository: customers,
-      inventoryDeductionRepository: deductions,
-      printService: printing,
-      onSettled: billing.clearCart,
-    );
-    addTearDown(controller.dispose);
-    controller.goToPayment();
+      final CheckoutController controller = CheckoutController(
+        cart: billing.cart,
+        checkoutRepository: checkoutRepository,
+        customerRepository: customers,
+        inventoryDeductionRepository: deductions,
+        printService: printing,
+        onSettled: billing.clearCart,
+      );
+      addTearDown(controller.dispose);
+      controller.setCustomerName('Test Customer');
+      controller.setCustomerPhone('9000000001');
+      controller.goToPayment();
     controller.selectPaymentMethod(method);
     controller.tenderExact();
     controller.goToConfirm();
@@ -873,6 +875,8 @@ void main() {
         onSettled: billing.clearCart,
       );
       addTearDown(controller.dispose);
+      controller.setCustomerName('Test Customer');
+      controller.setCustomerPhone('9000000001');
       controller.goToPayment();
       controller.selectPaymentMethod(PaymentMethod.cash);
       controller.tenderExact();
@@ -989,6 +993,8 @@ void main() {
         onSettled: billing.clearCart,
       );
       addTearDown(controller.dispose);
+      controller.setCustomerName('Test Customer');
+      controller.setCustomerPhone('9000000001');
       controller.goToPayment();
       controller.selectPaymentMethod(PaymentMethod.cash);
       controller.tenderExact();

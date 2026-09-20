@@ -46,6 +46,18 @@ class SettingKeys {
   /// pick any of them on the review step.
   static const String defaultOrderType = 'pos.defaultOrderType';
 
+  /// Whether a kitchen slip is sent to the printer after a sale.
+  ///
+  /// The slip is still written to the till either way. This only decides whether paper
+  /// comes out. Absent means print, which is how the till has always behaved.
+  static const String printKitchenSlip = 'pos.printKitchenSlip';
+
+  /// Whether checkout asks for the customer's name and phone, and whether those
+  /// details are printed on the customer bill.
+  ///
+  /// Absent means ask and print, which is how the till has always behaved.
+  static const String askCustomerDetails = 'pos.askCustomerDetails';
+
   // ------------------------------------------------------------------ printer ---
   //
   // The printer's *layout*, not its address. There is deliberately no key here for a

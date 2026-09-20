@@ -238,6 +238,29 @@ class _PosBehaviourSection extends StatelessWidget {
             ],
           ),
         ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Print kitchen slip'),
+          subtitle: const Text(
+            'Ask at the till whether a kitchen slip should print after a sale. '
+            'Turned off, the slip is still written for the kitchen board; only '
+            'the paper is skipped.',
+          ),
+          value: controller.printKitchenSlip,
+          onChanged: (bool value) =>
+              controller.setPrintKitchenSlip(isEnabled: value),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Ask customer name and phone'),
+          subtitle: const Text(
+            'Collect a name and phone on checkout, and print both on the '
+            'customer bill. Turned off, walk-in bills skip those fields.',
+          ),
+          value: controller.askCustomerDetails,
+          onChanged: (bool value) =>
+              controller.setAskCustomerDetails(isEnabled: value),
+        ),
       ],
     );
   }

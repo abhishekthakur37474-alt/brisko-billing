@@ -91,9 +91,13 @@ class CheckoutController extends ChangeNotifier {
     required this._onSettled,
     OrderType initialOrderType = OrderType.takeaway,
     GstRate taxRate = GstRate.zero,
+    bool printKitchenSlip = true,
+    bool askCustomerDetails = true,
   }) : _cart = cart,
        _orderType = initialOrderType,
        _taxRate = taxRate,
+       _printKitchenSlip = printKitchenSlip,
+       _askCustomerDetails = askCustomerDetails,
        _totals = BillTotals.forCart(cart: cart, taxRate: taxRate),
        _cashTender = CashTender(
          payable: BillTotals.forCart(cart: cart, taxRate: taxRate).total,
@@ -117,6 +121,17 @@ class CheckoutController extends ChangeNotifier {
   /// Not settable. A cashier does not choose a tax rate at the counter; the outlet
   /// configures one in Settings and every bill taken afterwards carries it.
   final GstRate _taxRate;
+
+  /// Whether a kitchen slip is sent to the printer after this sale.
+  ///
+  /// Read from Settings when the flow opened. The slip is still written either way.
+  final bool _printKitchenSlip;
+
+  /// Whether this bill asks for a name and phone, and prints both on the receipt.
+  ///
+  /// Read from Settings when the flow opened, so a change mid-settlement cannot
+  /// drop fields the cashier has already filled.
+  final bool _askCustomerDetails;
 
   /// The current money block. Replaced whole whenever the discount moves.
   BillTotals _totals;
@@ -355,7 +370,13 @@ class CheckoutController extends ChangeNotifier {
   bool get hasBill => _cart.isNotEmpty && _totals.isPayable;
 
   /// True when the order type means the customer has to be contactable.
-  bool get requiresCustomerPhone => true;
+  bool get requiresCustomerPhone => _askCustomerDetails;
+
+  /// True when checkout collects a name and phone, and the receipt prints both.
+  bool get askCustomerDetails => _askCustomerDetails;
+
+  /// True when a kitchen slip is sent to the printer after this sale.
+  bool get printKitchenSlip => _printKitchenSlip;
 
   bool get hasCustomerPhone => _customerPhone.isNotEmpty;
 
@@ -368,25 +389,41 @@ class CheckoutController extends ChangeNotifier {
   /// True when what has been entered reduces to a number that can be stored.
   bool get isCustomerPhoneComplete => normalisedCustomerPhone != null;
 
-  /// True when both the name and a usable phone number have been entered.
-  bool get isCustomerAcceptable =>
-      hasCustomerName && isCustomerPhoneComplete;
+  /// True when the customer fields this bill requires have been filled.
+  ///
+  /// When Settings asks for a name and phone, both are required. When it does not,
+  /// a walk-in is acceptable — but a half-typed number still blocks, because filing
+  /// the bill under a stranger is worse than leaving it unnamed.
+  bool get isCustomerAcceptable {
+    if (hasCustomerPhone && !isCustomerPhoneComplete) {
+      return false;
+    }
+    if (!_askCustomerDetails) {
+      return true;
+    }
+    return hasCustomerName && isCustomerPhoneComplete;
+  }
 
   /// What is wrong with the number entered, or `null` when there is nothing to say.
   ///
-  /// A missing or unusable number always blocks the sale. Anything that cannot be stored
-  /// says what is wanted instead, because the alternative — a silently shortened number
-  /// — files the bill under a stranger.
+  /// A missing or unusable number blocks the sale when a number is required. Anything
+  /// that cannot be stored says what is wanted instead, because the alternative — a
+  /// silently shortened number — files the bill under a stranger.
   String? get customerPhoneProblem {
     if (!hasCustomerPhone) {
-      return 'A phone number is needed for every order.';
+      return _askCustomerDetails
+          ? 'A phone number is needed for every order.'
+          : null;
     }
     return isCustomerPhoneComplete ? null : CustomerPhone.requirement;
   }
 
   /// What is wrong with the name entered, or `null` when there is nothing to say.
   String? get customerNameProblem {
-    return hasCustomerName ? null : 'A name is needed for every order.';
+    if (hasCustomerName) {
+      return null;
+    }
+    return _askCustomerDetails ? 'A name is needed for every order.' : null;
   }
 
   /// True when the review step is complete enough to take payment.
@@ -893,7 +930,10 @@ class CheckoutController extends ChangeNotifier {
     _isPrinting = true;
     _notify();
 
-    _printRun = await _printService.printSale(order.id);
+    _printRun = await _printService.printSale(
+      order.id,
+      printKitchenSlip: _printKitchenSlip,
+    );
     _isPrinting = false;
     _notify();
   }

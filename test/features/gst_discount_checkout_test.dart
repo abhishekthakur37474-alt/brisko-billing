@@ -106,6 +106,8 @@ void main() {
       taxRate: taxRate,
     );
     addTearDown(controller.dispose);
+    controller.setCustomerName('Test Customer');
+    controller.setCustomerPhone('9000000001');
     return controller;
   }
 

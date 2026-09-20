@@ -35,6 +35,7 @@ void main() {
     List<CustomerReceiptLine>? lines,
     CustomerReceiptTotals? totals,
     PaymentMethod paymentMethod = PaymentMethod.cash,
+    String? customerName,
     String? customerPhone,
     String? notes,
     OrderType orderType = OrderType.takeaway,
@@ -77,6 +78,7 @@ void main() {
             total: subtotal,
           ),
       paymentMethod: paymentMethod,
+      customerName: customerName,
       customerPhone: customerPhone,
       notes: notes,
       isReprint: isReprint,
@@ -160,16 +162,19 @@ void main() {
       expect(paper.hasLineContaining('11/09/2026'), isTrue);
     });
 
-    test('the customer phone is printed when one was taken', () {
-      expect(
-        print(receipt(customerPhone: '9876543210'))
-            .hasLineContaining('Customer: 9876543210'),
-        isTrue,
+    test('the customer name and phone are printed when taken', () {
+      final EscPosTranscript paper = print(
+        receipt(customerName: 'Ravi', customerPhone: '9876543210'),
       );
+
+      expect(paper.hasLineContaining('Customer: Ravi'), isTrue);
+      expect(paper.hasLineContaining('Phone: 9876543210'), isTrue);
     });
 
     test('a walk-in gets no customer line', () {
-      expect(print(receipt()).text, isNot(contains('Customer:')));
+      final String text = print(receipt()).text;
+      expect(text, isNot(contains('Customer:')));
+      expect(text, isNot(contains('Phone:')));
     });
 
     test('a line shows the size, its options, the quantity and the total', () {
@@ -531,6 +536,7 @@ void main() {
             receiptFooter: 'Thank you, please come again',
             feedbackUrl: 'https://g.page/r/brisko-pizza/review',
           ),
+          customerName: 'Ravi',
           customerPhone: '9876543210',
           notes: 'Extra napkins please, and cut the large one into eight',
         ),

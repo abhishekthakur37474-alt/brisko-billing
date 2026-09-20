@@ -67,6 +67,12 @@ class CheckoutScreen extends StatelessWidget {
           taxRate:
               context.read<ActivePosSettings?>()?.settings.gstRate ??
               GstRate.zero,
+          printKitchenSlip:
+              context.read<ActivePosSettings?>()?.settings.printKitchenSlip ??
+              true,
+          askCustomerDetails:
+              context.read<ActivePosSettings?>()?.settings.askCustomerDetails ??
+              true,
         );
       },
       child: const _CheckoutView(),

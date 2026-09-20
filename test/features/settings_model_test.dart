@@ -116,6 +116,37 @@ void main() {
       // Punctuation, capitalisation and inner spacing are the owner's.
       expect(settings.receiptFooter, 'Thank you, come again!');
     });
+
+    test('kitchen-slip and customer-details flags default on when absent', () {
+      expect(PosSettings.unconfigured.printKitchenSlip, isTrue);
+      expect(PosSettings.unconfigured.askCustomerDetails, isTrue);
+      expect(
+        PosSettings.fromStored(const <String, String?>{}).printKitchenSlip,
+        isTrue,
+      );
+      expect(
+        PosSettings.fromStored(const <String, String?>{}).askCustomerDetails,
+        isTrue,
+      );
+    });
+
+    test('kitchen-slip and customer-details flags round-trip as true or false', () {
+      const PosSettings off = PosSettings(
+        printKitchenSlip: false,
+        askCustomerDetails: false,
+      );
+
+      expect(off.toStored()[SettingKeys.printKitchenSlip], 'false');
+      expect(off.toStored()[SettingKeys.askCustomerDetails], 'false');
+      expect(PosSettings.fromStored(off.toStored()), off);
+
+      final PosSettings fromFalse = PosSettings.fromStored(<String, String?>{
+        SettingKeys.printKitchenSlip: 'false',
+        SettingKeys.askCustomerDetails: 'false',
+      });
+      expect(fromFalse.printKitchenSlip, isFalse);
+      expect(fromFalse.askCustomerDetails, isFalse);
+    });
   });
 
   group('GSTIN', () {

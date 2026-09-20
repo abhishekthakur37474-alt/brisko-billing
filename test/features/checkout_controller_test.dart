@@ -86,7 +86,11 @@ void main() {
   }
 
   /// A checkout over whatever is currently in the billing cart.
-  CheckoutController openCheckout() {
+  CheckoutController openCheckout({
+    bool withCustomer = true,
+    bool printKitchenSlip = true,
+    bool askCustomerDetails = true,
+  }) {
     final CheckoutController controller = CheckoutController(
       cart: billing.cart,
       checkoutRepository: checkoutRepository,
@@ -94,8 +98,13 @@ void main() {
       inventoryDeductionRepository: deductions,
       printService: printing,
       onSettled: billing.clearCart,
+      printKitchenSlip: printKitchenSlip,
+      askCustomerDetails: askCustomerDetails,
     );
     addTearDown(controller.dispose);
+    if (withCustomer && askCustomerDetails) {
+      fillCustomer(controller);
+    }
     return controller;
   }
 
@@ -239,7 +248,7 @@ void main() {
   group('the customer', () {
     test('every order needs a name and a phone number', () async {
       await ringUpPizza();
-      final CheckoutController controller = openCheckout();
+      final CheckoutController controller = openCheckout(withCustomer: false);
 
       expect(controller.orderType, OrderType.takeaway);
       expect(controller.hasCustomerPhone, isFalse);
@@ -255,9 +264,21 @@ void main() {
       expect(controller.canProceedToPayment, isTrue);
     });
 
+    test('turning the setting off lets a walk-in through', () async {
+      await ringUpPizza();
+      final CheckoutController controller = openCheckout(
+        withCustomer: false,
+        askCustomerDetails: false,
+      );
+
+      expect(controller.askCustomerDetails, isFalse);
+      expect(controller.isCustomerAcceptable, isTrue);
+      expect(controller.canProceedToPayment, isTrue);
+    });
+
     test('an order that leaves the outlet still needs both', () async {
       await ringUpPizza();
-      final CheckoutController controller = openCheckout();
+      final CheckoutController controller = openCheckout(withCustomer: false);
 
       controller.selectOrderType(OrderType.delivery);
       controller.setCustomerName('Ravi');
@@ -272,7 +293,7 @@ void main() {
 
     test('a half-typed number blocks the flow even when optional', () async {
       await ringUpPizza();
-      final CheckoutController controller = openCheckout();
+      final CheckoutController controller = openCheckout(withCustomer: false);
 
       controller.setCustomerPhone('90000');
 
@@ -283,7 +304,7 @@ void main() {
 
     test('only the digits of what was typed are kept', () async {
       await ringUpPizza();
-      final CheckoutController controller = openCheckout();
+      final CheckoutController controller = openCheckout(withCustomer: false);
 
       controller.setCustomerPhone('+91 (90000) 00001-x');
 
@@ -296,7 +317,7 @@ void main() {
     });
 
     test('a country code is dropped, not counted as part of the number', () {
-      final CheckoutController controller = openCheckout();
+      final CheckoutController controller = openCheckout(withCustomer: false);
 
       controller.setCustomerPhone('+91 98765 43210');
 
@@ -309,7 +330,7 @@ void main() {
 
     test('a number is never shortened to make it fit', () async {
       await ringUpPizza();
-      final CheckoutController controller = openCheckout();
+      final CheckoutController controller = openCheckout(withCustomer: false);
 
       // Thirteen digits, with no prefix that accounts for the extra three. Keeping the
       // first ten would produce 9000000001 — a real number belonging to somebody else —
@@ -326,7 +347,7 @@ void main() {
 
     test('a number that is not a mobile number is refused', () async {
       await ringUpPizza();
-      final CheckoutController controller = openCheckout();
+      final CheckoutController controller = openCheckout(withCustomer: false);
 
       // Ten digits, but no Indian mobile number starts with 1.
       controller.setCustomerPhone('1123456789');
@@ -788,6 +809,8 @@ void main() {
         onSettled: billing.clearCart,
       );
       addTearDown(controller.dispose);
+      controller.setCustomerName('Test Customer');
+      controller.setCustomerPhone('9000000001');
       controller.goToPayment();
       controller.selectPaymentMethod(PaymentMethod.upi);
       controller.goToConfirm();
@@ -813,6 +836,8 @@ void main() {
         onSettled: billing.clearCart,
       );
       addTearDown(second.dispose);
+      second.setCustomerName('Test Customer');
+      second.setCustomerPhone('9000000001');
       second.goToPayment();
       second.selectPaymentMethod(PaymentMethod.upi);
       second.goToConfirm();

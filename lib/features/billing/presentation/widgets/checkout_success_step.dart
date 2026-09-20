@@ -150,7 +150,9 @@ class _PrintingStatus extends StatelessWidget {
     if (controller.isPrinting) {
       return _PrintingNote(
         icon: Icons.print_outlined,
-        message: 'Printing the bill and the kitchen slip',
+        message: controller.printKitchenSlip
+            ? 'Printing the bill and the kitchen slip'
+            : 'Printing the bill',
       );
     }
 
@@ -161,7 +163,9 @@ class _PrintingStatus extends StatelessWidget {
           _PrintingNote(
             icon: Icons.print_outlined,
             colour: AppColors.success,
-            message: 'Bill and kitchen slip printed',
+            message: controller.printKitchenSlip
+                ? 'Bill and kitchen slip printed'
+                : 'Bill printed',
           ),
           const _ReprintActions(),
         ],
@@ -261,11 +265,12 @@ class _ReprintActions extends StatelessWidget {
             icon: const Icon(Icons.receipt_long_outlined, size: 18),
             label: const Text('Print receipt again'),
           ),
-          TextButton.icon(
-            onPressed: controller.reprintKitchenSlips,
-            icon: const Icon(Icons.soup_kitchen_outlined, size: 18),
-            label: const Text('Print kitchen slip again'),
-          ),
+          if (controller.printKitchenSlip)
+            TextButton.icon(
+              onPressed: controller.reprintKitchenSlips,
+              icon: const Icon(Icons.soup_kitchen_outlined, size: 18),
+              label: const Text('Print kitchen slip again'),
+            ),
         ],
       ),
     );

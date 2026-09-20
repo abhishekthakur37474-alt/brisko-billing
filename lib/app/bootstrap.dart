@@ -49,7 +49,6 @@ import '../features/printing/data/printers/configurable_thermal_printer.dart';
 import '../features/printing/data/printers/platform_thermal_printer_factory.dart';
 import '../features/printing/data/repository_sale_print_document_source.dart';
 import '../features/printing/data/settings_business_identity_source.dart';
-import '../features/printing/domain/models/monochrome_bitmap.dart';
 import '../features/printing/domain/models/print_settings.dart';
 import '../features/printing/domain/models/printer_connection_settings.dart';
 import '../features/printing/domain/printers/active_printer.dart';
@@ -63,7 +62,6 @@ import '../features/settings/data/repositories/sqlite_settings_repository.dart';
 import '../features/settings/domain/active_pos_settings.dart';
 import '../features/settings/domain/models/pos_settings.dart';
 import '../features/settings/domain/repositories/settings_repository.dart';
-import 'receipt_logo.dart';
 import 'sync/cloud_sync_activation.dart';
 import 'sync/sync_endpoints.dart';
 
@@ -265,10 +263,6 @@ Future<AppDependencies> bootstrap({
   // platforms sqflite covers natively (macOS, iOS, Android) it is a no-op and the
   // native factory is left exactly as it was. Must run before `database.open()`.
   initializeDatabaseFactory();
-
-  // The outlet logo, decoded once from its asset and reduced to printable dots. A
-  // build without the asset gets null, and receipts print with just the outlet name.
-  final MonochromeBitmap? receiptLogo = await loadReceiptLogo();
 
   final SqliteDatabase database = SqliteDatabase();
   await database.open(path: databasePath);
@@ -472,12 +466,9 @@ Future<AppDependencies> bootstrap({
         kots: kots,
         customers: customers,
         // Business details, GSTIN and the UPI address all come from settings. None of
-        // them has a hard-coded value anywhere in the printing layer. The logo is the
-        // one non-text element: an asset decoded above, or null when none is bundled.
-        identity: SettingsBusinessIdentitySource(
-          settings: settings,
-          logo: receiptLogo,
-        ),
+        // them has a hard-coded value anywhere in the printing layer. The customer bill
+        // is text only: no outlet logo is loaded or printed.
+        identity: SettingsBusinessIdentitySource(settings: settings),
       ),
     ),
   );

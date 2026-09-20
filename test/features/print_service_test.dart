@@ -68,6 +68,7 @@ void main() {
     int quantity = 1,
     OrderType orderType = OrderType.takeaway,
     PaymentMethod paymentMethod = PaymentMethod.cash,
+    String? customerName,
     String? customerPhone,
     String? notes,
   }) async {
@@ -81,6 +82,7 @@ void main() {
         paymentMethod: paymentMethod,
         // Settlement resolves the number to a customer record inside its own
         // transaction, so nothing has to be created here first.
+        customerName: customerName,
         customerPhone: customerPhone,
         notes: notes,
       ),
@@ -168,12 +170,16 @@ void main() {
       expect(documentAt(1).hasLineContaining('Delivery'), isTrue);
     });
 
-    test('a customer phone number is printed when one was taken', () async {
-      final Order order = await sellPizza(customerPhone: '9876543210');
+    test('the customer name and phone are printed when taken', () async {
+      final Order order = await sellPizza(
+        customerName: 'Ravi',
+        customerPhone: '9876543210',
+      );
 
       await printing.printSale(order.id);
 
-      expect(documentAt(1).hasLineContaining('Customer: 9876543210'), isTrue);
+      expect(documentAt(1).hasLineContaining('Customer: Ravi'), isTrue);
+      expect(documentAt(1).hasLineContaining('Phone: 9876543210'), isTrue);
     });
 
     test('printing writes nothing to the database', () async {

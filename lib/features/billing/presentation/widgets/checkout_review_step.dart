@@ -27,21 +27,23 @@ class CheckoutReviewStep extends StatelessWidget {
         Text('Order type', style: theme.textTheme.titleSmall),
         const SizedBox(height: 8),
         const _OrderTypeChoices(),
-        const SizedBox(height: 24),
-        Row(
-          children: <Widget>[
-            Text('Customer', style: theme.textTheme.titleSmall),
-            const SizedBox(width: 8),
-            Text(
-              'Required',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+        if (controller.askCustomerDetails) ...<Widget>[
+          const SizedBox(height: 24),
+          Row(
+            children: <Widget>[
+              Text('Customer', style: theme.textTheme.titleSmall),
+              const SizedBox(width: 8),
+              Text(
+                'Required',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        const _CustomerInfoFields(),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const _CustomerInfoFields(),
+        ],
         const SizedBox(height: 24),
         if (DateTime.now().weekday == DateTime.friday &&
             controller.qualifyingMediumPizzas > 0) ...<Widget>[

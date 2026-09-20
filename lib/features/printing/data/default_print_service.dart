@@ -52,8 +52,14 @@ class DefaultPrintService implements PrintService {
   final DateTime Function() _clock;
 
   @override
-  Future<SalePrintRun> printSale(String orderId) =>
-      _run(orderId, isReprint: false);
+  Future<SalePrintRun> printSale(
+    String orderId, {
+    bool printKitchenSlip = true,
+  }) => _run(
+    orderId,
+    isReprint: false,
+    skipKitchenSlip: !printKitchenSlip,
+  );
 
   @override
   Future<SalePrintRun> reprintSale(String orderId) =>
@@ -141,6 +147,7 @@ class DefaultPrintService implements PrintService {
     String orderId, {
     required bool isReprint,
     PrintJobKind? only,
+    bool skipKitchenSlip = false,
   }) async {
     final Result<SalePrintDocuments> built = await _documents.forOrder(
       orderId,
@@ -169,7 +176,11 @@ class DefaultPrintService implements PrintService {
     // In the order they should reach the printer: the kitchen slips first, because
     // somebody is waiting on the food.
     for (final PrintDocument document in documents.all) {
-      if (only != null && PrintJobFactory.kindOf(document) != only) {
+      final PrintJobKind kind = PrintJobFactory.kindOf(document);
+      if (only != null && kind != only) {
+        continue;
+      }
+      if (skipKitchenSlip && kind == PrintJobKind.kitchenKot) {
         continue;
       }
       jobs.add(await _send(_jobs.build(document, orderId: orderId)));

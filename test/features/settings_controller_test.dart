@@ -249,6 +249,23 @@ void main() {
       expect((await loaded()).defaultOrderType, OrderType.delivery);
     });
 
+    test('the kitchen-slip and customer-details flags save and reload', () async {
+      final SettingsController controller = await loaded();
+      expect(controller.printKitchenSlip, isTrue);
+      expect(controller.askCustomerDetails, isTrue);
+
+      controller.setPrintKitchenSlip(isEnabled: false);
+      controller.setAskCustomerDetails(isEnabled: false);
+      expect(controller.isDirty, isTrue);
+      expect(await controller.save(), isTrue);
+
+      final SettingsController reopened = await loaded();
+      expect(reopened.printKitchenSlip, isFalse);
+      expect(reopened.askCustomerDetails, isFalse);
+      expect(active.settings.printKitchenSlip, isFalse);
+      expect(active.settings.askCustomerDetails, isFalse);
+    });
+
     test('every printer setting saves and reloads', () async {
       final SettingsController controller = await loaded();
 

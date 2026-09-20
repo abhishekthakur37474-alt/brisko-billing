@@ -106,6 +106,8 @@ class SettingsController extends ChangeNotifier {
   String _upiVpa = '';
   String _upiPayeeName = '';
   OrderType _defaultOrderType = PosSettings.fallbackOrderType;
+  bool _printKitchenSlip = true;
+  bool _askCustomerDetails = true;
 
   // A choice from a fixed list, not a typed value, so there is no draft text to validate
   // and no way to save a rate nobody meant.
@@ -176,6 +178,10 @@ class SettingsController extends ChangeNotifier {
   String get upiPayeeName => _upiPayeeName;
 
   OrderType get defaultOrderType => _defaultOrderType;
+
+  bool get printKitchenSlip => _printKitchenSlip;
+
+  bool get askCustomerDetails => _askCustomerDetails;
 
   /// The GST rate new bills will be charged at once this form is saved.
   GstRate get gstRate => _gstRate;
@@ -344,6 +350,18 @@ class SettingsController extends ChangeNotifier {
   void selectDefaultOrderType(OrderType type) =>
       _edit(() => _defaultOrderType = type, from: _defaultOrderType, to: type);
 
+  void setPrintKitchenSlip({required bool isEnabled}) => _edit(
+    () => _printKitchenSlip = isEnabled,
+    from: _printKitchenSlip,
+    to: isEnabled,
+  );
+
+  void setAskCustomerDetails({required bool isEnabled}) => _edit(
+    () => _askCustomerDetails = isEnabled,
+    from: _askCustomerDetails,
+    to: isEnabled,
+  );
+
   /// Chooses the GST rate for bills settled after the next save.
   ///
   /// Ignores a rate outside 0–100%, which nothing on the screen can offer. Bills already
@@ -478,6 +496,8 @@ class SettingsController extends ChangeNotifier {
     upiPayeeName: _stored(_upiPayeeName),
     defaultOrderType: _defaultOrderType,
     gstRate: _gstRate,
+    printKitchenSlip: _printKitchenSlip,
+    askCustomerDetails: _askCustomerDetails,
   );
 
   /// The printer half of the form, or `null` when a number cannot be read.
@@ -521,6 +541,8 @@ class SettingsController extends ChangeNotifier {
     _upiPayeeName = _saved.upiPayeeName ?? '';
     _defaultOrderType = _saved.defaultOrderType;
     _gstRate = _saved.gstRate;
+    _printKitchenSlip = _saved.printKitchenSlip;
+    _askCustomerDetails = _saved.askCustomerDetails;
 
     _font = _savedPrint.font;
     _columnOverride = _savedPrint.columnOverride?.toString() ?? '';

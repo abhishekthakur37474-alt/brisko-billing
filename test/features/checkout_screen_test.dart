@@ -128,6 +128,19 @@ void main() {
   Future<void> openCheckout(WidgetTester tester) =>
       tap(tester, find.widgetWithText(FilledButton, 'Checkout \u20b9320.00'));
 
+  /// Name and phone every order requires before payment.
+  Future<void> fillCustomer(WidgetTester tester) async {
+    await tester.enterText(
+      inCheckout(find.widgetWithText(TextField, 'Customer name')),
+      'Test Customer',
+    );
+    await tester.enterText(
+      inCheckout(find.widgetWithText(TextField, 'Phone number')),
+      '9000000001',
+    );
+    await settle(tester);
+  }
+
   group('opening checkout from the cart', () {
     testWidgets('the button is disabled until there is a bill', (
       WidgetTester tester,
@@ -170,6 +183,7 @@ void main() {
       await pumpBilling(tester);
       await ringUpPizza(tester);
       await openCheckout(tester);
+      await fillCustomer(tester);
 
       await tap(tester, find.widgetWithText(FilledButton, 'Take payment'));
       expect(find.text('Payment'), findsWidgets);
@@ -189,7 +203,7 @@ void main() {
 
       await tap(tester, review);
       expect(find.text('Confirm payment'), findsOneWidget);
-      expect(inCheckout(find.text('Walk-in')), findsOneWidget);
+      expect(inCheckout(find.text('Test Customer')), findsOneWidget);
 
       await tap(
         tester,
@@ -212,6 +226,7 @@ void main() {
       await pumpBilling(tester);
       await ringUpPizza(tester);
       await openCheckout(tester);
+      await fillCustomer(tester);
       await tap(tester, find.widgetWithText(FilledButton, 'Take payment'));
       await tap(tester, inCheckout(find.text('Cash')));
 
@@ -243,6 +258,7 @@ void main() {
       await pumpBilling(tester);
       await ringUpPizza(tester);
       await openCheckout(tester);
+      await fillCustomer(tester);
       await tap(tester, find.widgetWithText(FilledButton, 'Take payment'));
       await tap(tester, inCheckout(find.text('Cash')));
 
@@ -267,6 +283,7 @@ void main() {
       await pumpBilling(tester);
       await ringUpPizza(tester);
       await openCheckout(tester);
+      await fillCustomer(tester);
       await tap(tester, find.widgetWithText(FilledButton, 'Take payment'));
 
       await tap(tester, inCheckout(find.text('UPI')));
@@ -302,6 +319,7 @@ void main() {
       await pumpBilling(tester);
       await ringUpPizza(tester);
       await openCheckout(tester);
+      await fillCustomer(tester);
       await tap(tester, find.widgetWithText(FilledButton, 'Take payment'));
       await tap(tester, inCheckout(find.text('Cash')));
       await tap(tester, find.widgetWithText(OutlinedButton, 'Exact'));
@@ -334,6 +352,7 @@ void main() {
       await pumpBilling(tester);
       await ringUpPizza(tester);
       await openCheckout(tester);
+      await fillCustomer(tester);
       await tap(tester, find.widgetWithText(FilledButton, 'Take payment'));
       await tap(tester, inCheckout(find.text('Cash')));
       await tap(tester, find.widgetWithText(OutlinedButton, 'Exact'));
@@ -364,6 +383,7 @@ void main() {
       await pumpBilling(tester);
       await ringUpPizza(tester);
       await openCheckout(tester);
+      await fillCustomer(tester);
       await tap(tester, find.widgetWithText(FilledButton, 'Take payment'));
       await tap(tester, inCheckout(find.text('UPI')));
       await tap(tester, find.widgetWithText(FilledButton, 'Review payment'));
@@ -547,6 +567,7 @@ void main() {
       await settle(tester);
 
       // 320 less 32 is 288, at 5% that is 14.40, total 302.40.
+      await fillCustomer(tester);
       await tap(
         tester,
         inCheckout(find.widgetWithText(FilledButton, 'Take payment')),

@@ -49,6 +49,8 @@ class PosSettings {
     this.upiPayeeName,
     this.defaultOrderType = fallbackOrderType,
     this.gstRate = GstRate.zero,
+    this.printKitchenSlip = true,
+    this.askCustomerDetails = true,
   });
 
   /// What is stored in the settings table, read into one value.
@@ -75,6 +77,8 @@ class PosSettings {
       gstRate:
           GstRate.tryParseStored(stored[SettingKeys.gstRateBasisPoints]) ??
           GstRate.zero,
+      printKitchenSlip: _flag(stored[SettingKeys.printKitchenSlip]) ?? true,
+      askCustomerDetails: _flag(stored[SettingKeys.askCustomerDetails]) ?? true,
     );
   }
 
@@ -141,6 +145,19 @@ class PosSettings {
   /// Applies only to bills settled after it is saved. See the class comment.
   final GstRate gstRate;
 
+  /// Whether a kitchen slip is sent to the printer after a sale.
+  ///
+  /// True until the owner turns it off. The slip is still written either way; this only
+  /// decides whether paper comes out. An absent stored value reads as true, which is how
+  /// the till has always behaved.
+  final bool printKitchenSlip;
+
+  /// Whether checkout asks for the customer's name and phone, and whether those
+  /// details are printed on the customer bill.
+  ///
+  /// True until the owner turns it off. An absent stored value reads as true.
+  final bool askCustomerDetails;
+
   /// These settings as rows for the settings table.
   ///
   /// A `null` value removes the key rather than storing an empty string, so "not
@@ -160,6 +177,8 @@ class PosSettings {
     // thing here — no GST — so there is nothing to be gained by removing the row, and
     // writing it means the stored configuration states what the terminal is charging.
     SettingKeys.gstRateBasisPoints: gstRate.toStored(),
+    SettingKeys.printKitchenSlip: printKitchenSlip ? 'true' : 'false',
+    SettingKeys.askCustomerDetails: askCustomerDetails ? 'true' : 'false',
   };
 
   bool get hasBusinessName => businessName != null;
@@ -199,6 +218,8 @@ class PosSettings {
     String? upiPayeeName,
     OrderType? defaultOrderType,
     GstRate? gstRate,
+    bool? printKitchenSlip,
+    bool? askCustomerDetails,
   }) {
     return PosSettings(
       businessName: businessName ?? this.businessName,
@@ -212,6 +233,8 @@ class PosSettings {
       upiPayeeName: upiPayeeName ?? this.upiPayeeName,
       defaultOrderType: defaultOrderType ?? this.defaultOrderType,
       gstRate: gstRate ?? this.gstRate,
+      printKitchenSlip: printKitchenSlip ?? this.printKitchenSlip,
+      askCustomerDetails: askCustomerDetails ?? this.askCustomerDetails,
     );
   }
 
@@ -228,7 +251,9 @@ class PosSettings {
       other.upiVpa == upiVpa &&
       other.upiPayeeName == upiPayeeName &&
       other.defaultOrderType == defaultOrderType &&
-      other.gstRate == gstRate;
+      other.gstRate == gstRate &&
+      other.printKitchenSlip == printKitchenSlip &&
+      other.askCustomerDetails == askCustomerDetails;
 
   @override
   int get hashCode => Object.hash(
@@ -243,6 +268,8 @@ class PosSettings {
     upiPayeeName,
     defaultOrderType,
     gstRate,
+    printKitchenSlip,
+    askCustomerDetails,
   );
 
   @override
@@ -250,7 +277,9 @@ class PosSettings {
       'PosSettings(name: ${businessName ?? 'unset'}, '
       'gstin: ${hasGstin ? 'set' : 'unset'}, '
       'gst: ${gstRate.label}, '
-      'defaultOrderType: ${defaultOrderType.name})';
+      'defaultOrderType: ${defaultOrderType.name}, '
+      'printKitchenSlip: $printKitchenSlip, '
+      'askCustomerDetails: $askCustomerDetails)';
 
   /// [stored] with its surrounding whitespace removed, or `null` when it holds nothing.
   ///
@@ -280,4 +309,9 @@ class PosSettings {
     }
     return null;
   }
+
+  /// [stored] as a flag. Anything other than the stored value `true` is false, which is
+  /// the same reading `SettingsRepository.readBool` gives. Absent is left to the caller
+  /// so each flag can keep its own default.
+  static bool? _flag(String? stored) => stored == null ? null : stored == 'true';
 }

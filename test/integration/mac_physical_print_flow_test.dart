@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:brisko_billing/app/receipt_logo.dart';
 import 'package:brisko_billing/core/data/local/sqlite/sqlite_database.dart';
 import 'package:brisko_billing/features/billing/data/repositories/sqlite_checkout_repository.dart';
 import 'package:brisko_billing/features/billing/domain/models/bill_discount.dart';
@@ -47,7 +46,6 @@ import '../helpers/test_printing.dart';
 /// CUPS queue (default `TVS_RP3200_TEST`) attached. On every other machine it is inert,
 /// so the ordinary `flutter test` run stays hardware-independent.
 void main() {
-  // Needed so the outlet logo can be loaded from the bundled asset below.
   TestWidgetsFlutterBinding.ensureInitialized();
 
   final bool enabled = Platform.environment['BRISKO_PHYSICAL_PRINT'] == '1';
@@ -114,14 +112,9 @@ void main() {
         expect(resolution.support, PrinterTransportSupport.available);
         printer = resolution.printer;
 
-        // The real outlet logo, decoded from the bundled asset exactly as the app does
-        // at start-up, so the physical receipt carries the Brisko logo at its head.
-        final logo = await loadReceiptLogo();
-
         printing = TestPrinting.serviceOver(
           database,
           printer: printer,
-          logo: logo,
         );
       });
 
@@ -201,6 +194,8 @@ void main() {
         controller.selectDiscountType(BillDiscountType.amount);
         controller.editDiscount('20');
 
+        controller.setCustomerName('Test Customer');
+        controller.setCustomerPhone('9000000001');
         controller.goToPayment();
         controller.selectPaymentMethod(PaymentMethod.cash);
         controller.tenderExact();
@@ -236,8 +231,7 @@ void main() {
           (PrintJob j) => j.kind == PrintJobKind.customerReceipt,
         );
         final EscPosTranscript bill = EscPosTranscript.of(receiptJob.bytes);
-        // Logo (1-3): the raster logo is on the bill, above the outlet name.
-        expect(bill.rasterImages, isNotEmpty, reason: 'receipt carries the logo');
+        expect(bill.rasterImages, isEmpty, reason: 'receipt carries no logo');
         expect(bill.hasLineContaining('BRISKO PIZZA'), isTrue);
         // Address/phone (4-5): the exact short address, and never the retired long one.
         expect(
@@ -410,6 +404,8 @@ void main() {
         controller.selectDiscountType(BillDiscountType.amount);
         controller.editDiscount('20');
 
+        controller.setCustomerName('Test Customer');
+        controller.setCustomerPhone('9000000001');
         controller.goToPayment();
         controller.selectPaymentMethod(PaymentMethod.cash);
         controller.tenderExact();

@@ -120,6 +120,8 @@ void main() {
     );
     addTearDown(controller.dispose);
 
+    controller.setCustomerName('Test Customer');
+    controller.setCustomerPhone('9000000001');
     controller.goToPayment();
     controller.selectPaymentMethod(PaymentMethod.cash);
     controller.tenderExact();

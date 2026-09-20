@@ -23,12 +23,20 @@ import '../models/sale_print_run.dart';
 /// no repository write in its path at all. That is the guarantee: not a duplicate
 /// check, but the absence of any code that could duplicate.
 abstract interface class PrintService {
-  /// Builds and prints the receipt and the kitchen slip for a settled order.
+  /// Builds and prints the receipt and, when asked, the kitchen slip for a settled
+  /// order.
+  ///
+  /// [printKitchenSlip] is the owner’s choice from Settings. False skips the slip’s
+  /// paper only; the ticket is already written. A reprint of the slip is still
+  /// offered from bill detail.
   ///
   /// Returns the run rather than a `Result`, because "the printer failed" is the
   /// normal, expected outcome this method exists to report, and the caller needs the
   /// per-document detail to tell the cashier what to do.
-  Future<SalePrintRun> printSale(String orderId);
+  Future<SalePrintRun> printSale(
+    String orderId, {
+    bool printKitchenSlip = true,
+  });
 
   /// Re-sends the failed documents of [run], leaving the printed ones alone.
   ///
