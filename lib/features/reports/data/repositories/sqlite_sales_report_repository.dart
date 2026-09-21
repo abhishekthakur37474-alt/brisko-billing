@@ -309,7 +309,7 @@ class SqliteSalesReportRepository implements SalesReportRepository {
           o.discountValue AS discountValue,
           o.notes AS notes,
           c.phone AS customerPhone,
-          c.name AS customerName,
+          COALESCE(o.customerName, c.name) AS customerName,
           -- The earliest settled tender, matching what the receipt printed. Split
           -- payment is a later feature and this is the line that changes for it.
           (
@@ -451,7 +451,7 @@ class SqliteSalesReportRepository implements SalesReportRepository {
           o.discountValue AS discountValue,
           o.notes AS notes,
           c.phone AS customerPhone,
-          c.name AS customerName,
+          COALESCE(o.customerName, c.name) AS customerName,
           (
             SELECT p.paymentMethod
             FROM ${SqliteTables.payments} p
@@ -549,7 +549,8 @@ class SqliteSalesReportRepository implements SalesReportRepository {
             taxRateBasisPoints,
             discountType,
             discountValue,
-            notes
+            notes,
+            customerName
           FROM ${SqliteTables.orders}
           WHERE ${SyncColumns.isDeleted} = 0
             AND status = ?

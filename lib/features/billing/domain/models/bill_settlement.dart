@@ -194,6 +194,12 @@ class BillSettlement {
   bool get hasCustomer =>
       customerPhone != null && customerPhone!.trim().isNotEmpty;
 
+  /// The name to stamp onto the order, or `null` when none was given.
+  String? get recordedCustomerName {
+    final String? name = customerName?.trim();
+    return name == null || name.isEmpty ? null : name;
+  }
+
   final String? notes;
 
   final DateTime createdAt;
@@ -244,6 +250,7 @@ class BillSettlement {
       orderType: orderType,
       status: CheckoutTransition.settledOrderStatus,
       customerId: customerId,
+      customerName: recordedCustomerName,
       subtotal: totals.subtotal,
       discountAmount: totals.discount,
       taxAmount: totals.tax,

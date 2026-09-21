@@ -46,6 +46,7 @@ class Order implements SyncableEntity {
     this.discountType,
     this.discountValue = 0,
     this.customerId,
+    this.customerName,
     this.notes,
     this.cancelledAt,
     this.cancellationReason,
@@ -69,6 +70,7 @@ class Order implements SyncableEntity {
         fallback: OrderStatus.draft,
       ),
       customerId: row.optionalString('customerId'),
+      customerName: row.optionalString('customerName'),
       subtotal: Money.fromPaise(row.requireInt('subtotalPaise')),
       discountAmount: Money.fromPaise(row.requireInt('discountAmountPaise')),
       taxAmount: Money.fromPaise(row.requireInt('taxAmountPaise')),
@@ -102,6 +104,14 @@ class Order implements SyncableEntity {
 
   /// `null` for a walk-in who did not give a phone number.
   final String? customerId;
+
+  /// The name taken with this bill, or `null` when none was given.
+  ///
+  /// Stored on the order rather than only on a customer record, because a name can
+  /// be taken without a phone and a customer record is keyed by phone. A blank or
+  /// missing value is a walk-in; a stored value is what the cashier typed, for any
+  /// order type.
+  final String? customerName;
 
   /// Sum of line totals before bill-level discount and tax.
   final Money subtotal;
@@ -167,6 +177,7 @@ class Order implements SyncableEntity {
     OrderType? orderType,
     OrderStatus? status,
     String? customerId,
+    String? customerName,
     Money? subtotal,
     Money? discountAmount,
     Money? taxAmount,
@@ -188,6 +199,7 @@ class Order implements SyncableEntity {
       orderType: orderType ?? this.orderType,
       status: status ?? this.status,
       customerId: customerId ?? this.customerId,
+      customerName: customerName ?? this.customerName,
       subtotal: subtotal ?? this.subtotal,
       discountAmount: discountAmount ?? this.discountAmount,
       taxAmount: taxAmount ?? this.taxAmount,
@@ -218,6 +230,7 @@ class Order implements SyncableEntity {
       'orderType': orderType.name,
       'status': status.name,
       'customerId': customerId,
+      'customerName': customerName,
       'subtotalPaise': subtotal.paise,
       'discountAmountPaise': discountAmount.paise,
       'taxAmountPaise': taxAmount.paise,

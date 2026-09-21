@@ -59,12 +59,16 @@ void main() {
     Cart cart, {
     OrderType orderType = OrderType.takeaway,
     PaymentMethod method = PaymentMethod.cash,
+    String? customerName,
+    String? customerPhone,
     String? reference,
     String? notes,
   }) => BillSettlement.fromCart(
     cart: cart,
     orderType: orderType,
     paymentMethod: method,
+    customerName: customerName,
+    customerPhone: customerPhone,
     reference: reference,
     notes: notes,
   );
@@ -96,6 +100,7 @@ void main() {
         expect(order.taxAmount, Money.zero);
         expect(order.totalAmount, Money.parse('320'));
         expect(order.customerId, isNull);
+        expect(order.customerName, isNull);
 
         // Read back through the order repository, not from the value returned.
         final Order stored = (await orders.findOrder(order.id)).valueOrNull!;
@@ -137,6 +142,23 @@ void main() {
         );
       },
     );
+
+    test('a name without a phone is stored on the bill', () async {
+      final Cart cart = await pizzaCart();
+
+      final Result<Order> result = await checkout.settle(
+        settlementFor(cart, customerName: 'Ravi'),
+      );
+
+      expect(result.isOk, isTrue, reason: result.failureOrNull?.message);
+      final Order order = result.valueOrNull!;
+      expect(order.customerId, isNull);
+      expect(order.customerName, 'Ravi');
+      expect(await rowCount('customers'), 0);
+
+      final Order stored = (await orders.findOrder(order.id)).valueOrNull!;
+      expect(stored.customerName, 'Ravi');
+    });
 
     test('a multi-line bill totals exactly and keeps its line order', () async {
       final BillingController billing = await SeededCart.controller(menu);

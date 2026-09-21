@@ -73,8 +73,9 @@ class SalesBill {
   /// What the bill is left having earned: [total] less [refundedAmount].
   Money get netTotal => total - refundedAmount;
 
-  /// True when the bill is filed against a customer record.
-  bool get hasCustomer => customerPhone != null;
+  /// True when the bill is filed against a customer record or carries a name.
+  bool get hasCustomer => customerPhone != null ||
+      (customerName != null && customerName!.trim().isNotEmpty);
 
   /// True when a kitchen slip number is stored for the bill.
   bool get hasKotNumber => kotNumber != null;

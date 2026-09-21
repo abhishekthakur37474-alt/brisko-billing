@@ -308,6 +308,7 @@ void main() {
       Cart cart, {
       OrderType orderType = OrderType.takeaway,
       PaymentMethod method = PaymentMethod.cash,
+      String? customerName,
       String? customerPhone,
       String? reference,
       String? notes,
@@ -315,6 +316,7 @@ void main() {
       cart: cart,
       orderType: orderType,
       paymentMethod: method,
+      customerName: customerName,
       customerPhone: customerPhone,
       reference: reference,
       notes: notes,
@@ -480,6 +482,7 @@ void main() {
       expect(order.orderType, OrderType.delivery);
       expect(order.status, OrderStatus.completed);
       expect(order.customerId, 'cus-1');
+      expect(order.customerName, isNull);
       expect(order.notes, 'No onions');
       expect(order.subtotal, Money.parse('320'));
       expect(order.discountAmount, Money.zero);
@@ -488,6 +491,23 @@ void main() {
       expect(order.createdAt, at);
       // Consistent with what the payment says was collected.
       expect(order.totalAmount, settlement.payment.amount);
+    });
+
+    test('a name without a phone is stamped onto the order', () {
+      final BillSettlement settlement = settlementFor(
+        cartOf(<CartLine>[lineOf(id: 'l1', item: itemPriced('320.00'))]),
+        orderType: OrderType.dineIn,
+        customerName: 'Ravi',
+      );
+
+      expect(settlement.hasCustomer, isFalse);
+      expect(settlement.recordedCustomerName, 'Ravi');
+
+      final Order order = settlement.toOrder('20260921-0001');
+
+      expect(order.customerId, isNull);
+      expect(order.customerName, 'Ravi');
+      expect(order.orderType, OrderType.dineIn);
     });
 
     test('every id is fixed when the settlement is built', () {

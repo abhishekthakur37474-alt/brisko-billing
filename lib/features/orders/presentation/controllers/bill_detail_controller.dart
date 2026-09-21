@@ -263,7 +263,15 @@ class BillDetailController extends ChangeNotifier {
   String? get customerPhone => _customer?.phone;
 
   /// The name recorded for the customer, or `null` when none was stored.
+  ///
+  /// Prefers the name stamped on the bill, so a walk-in whose name was taken
+  /// without a phone still shows it. Falls back to the customer record for bills
+  /// settled before that snapshot existed.
   String? get customerName {
+    final String? onBill = _order?.customerName?.trim();
+    if (onBill != null && onBill.isNotEmpty) {
+      return onBill;
+    }
     final String? name = _customer?.name?.trim();
     return name == null || name.isEmpty ? null : name;
   }

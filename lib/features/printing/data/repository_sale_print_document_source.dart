@@ -189,6 +189,7 @@ class RepositorySalePrintDocumentSource implements SalePrintDocumentSource {
     }
 
     final BusinessIdentity business = await identity.load();
+    final Customer? customer = await _customer(order.customerId);
 
     return Ok<CustomerReceipt>(
       CustomerReceipt(
@@ -201,8 +202,8 @@ class RepositorySalePrintDocumentSource implements SalePrintDocumentSource {
         // The first settled tender. Split payment is a later feature, and when it
         // arrives this is the line that changes.
         paymentMethod: settled.first.paymentMethod,
-        customerName: (await _customer(order.customerId))?.name,
-        customerPhone: (await _customer(order.customerId))?.phone,
+        customerName: order.customerName ?? customer?.name,
+        customerPhone: customer?.phone,
         notes: order.notes,
         isReprint: isReprint,
       ),
@@ -248,7 +249,7 @@ class RepositorySalePrintDocumentSource implements SalePrintDocumentSource {
               orderNumber: ticket.orderNumber,
               orderType: ticket.orderType,
               issuedAt: ticket.createdAt,
-              customerName: customer?.name,
+              customerName: order.customerName ?? customer?.name,
               customerPhone: customer?.phone,
               notes: ticket.notes,
               isReprint: isReprint,

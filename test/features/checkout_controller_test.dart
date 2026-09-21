@@ -405,7 +405,7 @@ void main() {
       expect(await rowCount('customers'), 0);
     });
 
-    test('a name without a phone settles as a walk-in', () async {
+    test('a name without a phone is kept on the bill', () async {
       await ringUpPizza();
       final CheckoutController controller = openCheckout(withCustomer: false);
       controller.setCustomerName('Ravi');
@@ -417,7 +417,13 @@ void main() {
 
       expect(controller.isSettled, isTrue);
       expect(controller.settledOrder!.customerId, isNull);
+      expect(controller.settledOrder!.customerName, 'Ravi');
       expect(await rowCount('customers'), 0);
+
+      final Order stored = (await orders.findOrder(
+        controller.settledOrder!.id,
+      )).valueOrNull!;
+      expect(stored.customerName, 'Ravi');
     });
 
     test('the customer is created and linked to the bill', () async {

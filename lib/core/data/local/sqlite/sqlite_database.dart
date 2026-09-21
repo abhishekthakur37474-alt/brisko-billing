@@ -16,6 +16,7 @@ import 'migrations/m010_cloud_sync_metadata.dart';
 import 'migrations/m011_seed_new_combos.dart';
 import 'migrations/m012_expenses_and_cancellation.dart';
 import 'migrations/m013_rtdb_resync.dart';
+import 'migrations/m014_order_customer_name.dart';
 import 'migrations/migration.dart';
 import 'migrations/migration_runner.dart';
 
@@ -45,6 +46,7 @@ class SqliteDatabase {
     const M011SeedNewCombos(),
     const M012ExpensesAndCancellation(),
     const M013RtdbResync(),
+    const M014OrderCustomerName(),
   ]);
 
   /// File name of the database inside the platform's databases directory.

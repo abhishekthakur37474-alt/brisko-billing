@@ -182,6 +182,15 @@ void main() {
       expect(documentAt(1).hasLineContaining('Phone: 9876543210'), isTrue);
     });
 
+    test('a name without a phone still prints on the receipt', () async {
+      final Order order = await sellPizza(customerName: 'Ravi');
+
+      await printing.printSale(order.id);
+
+      expect(documentAt(1).hasLineContaining('Customer: Ravi'), isTrue);
+      expect(documentAt(1).text, isNot(contains('Phone:')));
+    });
+
     test('printing writes nothing to the database', () async {
       final Order order = await sellPizza();
       final Map<String, int> before = await saleRows();

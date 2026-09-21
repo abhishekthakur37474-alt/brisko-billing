@@ -61,7 +61,7 @@ void main() {
 
     expect(await database.database.getVersion(), SqliteDatabase.schemaVersion);
     expect(const M010CloudSyncMetadata().version, 10);
-    expect(SqliteDatabase.schemaVersion, 13);
+    expect(SqliteDatabase.schemaVersion, 14);
   });
 
   test('the sync_metadata table is created', () async {

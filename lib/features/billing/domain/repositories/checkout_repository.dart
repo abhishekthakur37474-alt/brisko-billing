@@ -28,8 +28,9 @@ abstract interface class CheckoutRepository {
   /// carries the number that is actually in the table. The same is true of the customer:
   /// `BillSettlement.customerPhone` is resolved to an existing record or a new one
   /// inside the transaction, and the returned order's `customerId` is the reference that
-  /// was stored. Nothing else about the settlement is changed: every name and price came
-  /// from the cart and is written as given.
+  /// was stored. A name taken without a phone is stamped onto the order itself, so the
+  /// bill still names who it was for. Nothing else about the settlement is changed:
+  /// every name and price came from the cart and is written as given.
   ///
   /// On failure nothing at all is persisted and the failure is returned rather than
   /// thrown, so the caller still holds an intact cart and can retry. A retry of the

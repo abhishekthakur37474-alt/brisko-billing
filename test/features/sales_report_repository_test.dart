@@ -953,6 +953,22 @@ void main() {
       expect(bill.customerPhone, '9876543210');
       expect(bill.customerName, 'Named Customer');
     });
+
+    test('a name without a phone is shown on the bill list', () async {
+      await seed.bill(
+        orderNumber: '20260913-0001',
+        at: dayAt(0),
+        customerName: 'Ravi',
+        subtotal: '100.00',
+        tax: '0.00',
+        total: '100.00',
+      );
+
+      final SalesBill bill = (await billsOf(today())).single;
+      expect(bill.hasCustomer, isTrue);
+      expect(bill.customerPhone, isNull);
+      expect(bill.customerName, 'Ravi');
+    });
   });
 
   // ------------------------------------------------------------------ kot number ---
